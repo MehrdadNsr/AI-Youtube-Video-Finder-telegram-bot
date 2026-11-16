@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import html
 import logging
+import re
 import time
 from urllib.parse import quote
 
@@ -9,6 +10,7 @@ from aiogram import Bot, Router, F
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.filters import CommandStart, Command
 from aiogram.filters.callback_data import CallbackData
+from pydantic import Field, field_validator
 from aiogram.types import (
     Message,
     CallbackQuery,
@@ -34,13 +36,24 @@ from services.youtube_searcher import YouTubeSearcher, YouTubeCandidate
 logger = logging.getLogger(__name__)
 router = Router(name="video_source_router")
 
+_YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
+
 
 class VideoActionCallback(CallbackData, prefix="vact"):
     """CallbackData for inline subtitle, softsub, summary, web player, and direct link actions."""
 
     action: str  # "srt_fa" | "srt_bi" | "mux_cc" | "summary" | "web_play" | "link_sub" | "link_orig" | "link_audio"
     video_id: str
-    start_sec: int = 0
+    start_sec: int = Field(default=0, ge=0, le=360000)
+
+    @field_validator("video_id")
+    @classmethod
+    def _validate_video_id(cls, value: str) -> str:
+        # Callback data is client-controlled; video_id ends up in URLs, file paths and HTML.
+        # Invalid data makes unpack() fail, so the filter simply ignores the callback.
+        if not _YOUTUBE_ID_RE.fullmatch(value):
+            raise ValueError("invalid YouTube video id")
+        return value
 
 
 class LangSelectCallback(CallbackData, prefix="lang"):

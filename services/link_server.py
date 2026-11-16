@@ -20,6 +20,18 @@ from config import Settings
 logger = logging.getLogger(__name__)
 
 
+class _LimitedFileResponse(web.FileResponse):
+    """FileResponse that holds a semaphore for the whole time the file is being sent."""
+
+    def __init__(self, semaphore: asyncio.Semaphore, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._limit_sem = semaphore
+
+    async def prepare(self, request: web.BaseRequest) -> Any:
+        async with self._limit_sem:
+            return await super().prepare(request)
+
+
 @dataclass
 class StoredLinkEntry:
     """Metadata for a single served media file inside LINK_DIR."""
@@ -186,11 +198,9 @@ class LinkServer:
         return True
 
     async def _handle_file_request(self, request: web.Request) -> web.StreamResponse:
-        client_ip = (
-            request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-            or request.remote
-            or "unknown"
-        )
+        # The link server is exposed directly, so X-Forwarded-For is attacker-controlled
+        # and must not be used for rate limiting. Use the real peer address.
+        client_ip = request.remote or "unknown"
         if not self._check_rate_limit(client_ip):
             raise web.HTTPTooManyRequests(text="Rate limit exceeded. Try again in a minute.")
 
@@ -217,8 +227,9 @@ class LinkServer:
             "X-Content-Type-Options": "nosniff",
         }
 
-        async with self._download_sem:
-            return web.FileResponse(path=full_path, headers=headers)
+        # aiohttp streams the file in prepare(), after the handler returns, so the
+        # concurrency cap must be held there rather than around the return statement.
+        return _LimitedFileResponse(self._download_sem, path=full_path, headers=headers)
 
     async def _handle_not_found(self, _request: web.Request) -> web.StreamResponse:
         raise web.HTTPNotFound(text="Not Found")

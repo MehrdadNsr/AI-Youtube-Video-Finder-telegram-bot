@@ -730,6 +730,16 @@ class SubtitleService:
             ],
             ensure_ascii=False,
         )
+        # Subtitle text comes from YouTube captions (uploader-controlled): make the JSON safe
+        # to embed inside <script> so "</script>" or "<!--" cannot break out of it.
+        subs_json = (
+            subs_json.replace("&", "\\u0026")
+            .replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029")
+        )
+        safe_video_id = json.dumps(str(meta.video_id))
         safe_title = html.escape(meta.title)
         safe_channel = html.escape(meta.channel)
 
@@ -783,14 +793,23 @@ class SubtitleService:
     const div = document.createElement('div');
     div.className = 'seg-item';
     div.id = 'seg-' + idx;
-    div.innerHTML = `<span class="seg-time">[${{item.t}}]</span><div class="seg-fa">${{item.fa}}</div><div class="seg-en">${{item.en}}</div>`;
+    const timeEl = document.createElement('span');
+    timeEl.className = 'seg-time';
+    timeEl.textContent = '[' + item.t + ']';
+    const faEl = document.createElement('div');
+    faEl.className = 'seg-fa';
+    faEl.textContent = item.fa;
+    const enEl = document.createElement('div');
+    enEl.className = 'seg-en';
+    enEl.textContent = item.en;
+    div.append(timeEl, faEl, enEl);
     div.onclick = () => {{ if (player && player.seekTo) {{ player.seekTo(item.s, true); player.playVideo(); }} }};
     listEl.appendChild(div);
   }});
   function onYouTubeIframeAPIReady() {{
     player = new YT.Player('yt-player', {{
-      videoId: '{meta.video_id}',
-      playerVars: {{ autoplay: 1, start: {start_seconds}, rel: 0, cc_load_policy: 0 }},
+      videoId: {safe_video_id},
+      playerVars: {{ autoplay: 1, start: {max(0, int(start_seconds))}, rel: 0, cc_load_policy: 0 }},
       events: {{ onReady: () => setInterval(syncSubtitles, 150) }}
     }});
   }}

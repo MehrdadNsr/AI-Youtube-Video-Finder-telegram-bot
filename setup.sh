@@ -153,7 +153,8 @@ if [ "${SKIP_ENV:-0}" -ne 1 ]; then
       warn "That does not look like a bot token (format: 123456789:AA...)."
       continue
     fi
-    bot_info="$(curl -sS --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/getMe" 2>/dev/null || true)"
+    # Pass the URL through stdin (-K -) so the token never shows up in the process list
+    bot_info="$(printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$BOT_TOKEN" | curl -sS --max-time 10 -K - 2>/dev/null || true)"
     if echo "$bot_info" | grep -q '"ok":true'; then
       bot_username="$(echo "$bot_info" | sed -nE 's/.*"username":"([^"]+)".*/\1/p')"
       ok "Token works: @${bot_username}"
