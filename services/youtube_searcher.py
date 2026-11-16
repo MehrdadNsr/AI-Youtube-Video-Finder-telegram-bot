@@ -7,6 +7,7 @@ from typing import Any
 import yt_dlp
 
 from services.gemini_extractor import CaptionAnalysisResult
+from services.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +24,10 @@ class YouTubeCandidate:
     view_count: int | None = None
     thumbnail_url: str = ""
 
-    # Phase 1 & Phase 2 scores
     metadata_score: float = 0.0
     audio_match_score: float | None = None
     confidence_score: float = 0.0
 
-    # Phase 2 transcript matching & timestamp data
     matched_timestamp_seconds: int | None = None
     matched_transcript_snippet: str | None = None
     match_reasons: list[str] = field(default_factory=list)
@@ -41,7 +40,7 @@ class YouTubeCandidate:
     def formatted_duration(self) -> str:
         """Format total video duration as MM:SS or HH:MM:SS."""
         if not self.duration_seconds or self.duration_seconds <= 0:
-            return "نامشخص"
+            return t("duration_unknown")
         return self._format_seconds(self.duration_seconds)
 
     @property
@@ -111,10 +110,6 @@ class YouTubeSearcher:
     async def find_best_matches(
         self, analysis: CaptionAnalysisResult, top_k: int = 4
     ) -> list[YouTubeCandidate]:
-        """
-        Execute search queries in parallel, deduplicate candidates, score metadata,
-        and return the top K candidates.
-        """
         queries = [q.strip() for q in analysis.search_queries if q.strip()][:3]
         if not queries:
             return []
@@ -178,7 +173,6 @@ class YouTubeSearcher:
     def _score_candidate_metadata(
         self, candidate: YouTubeCandidate, analysis: CaptionAnalysisResult
     ) -> None:
-        """Compute initial Tier 1 metadata score based on entity overlap and duration proximity."""
         full_target_text = f"{candidate.title} {candidate.channel}".lower()
         target_tokens = set(re.findall(r"[a-z0-9]+(?:\.[0-9]+)?", full_target_text))
 
@@ -209,7 +203,7 @@ class YouTubeSearcher:
             entity_score = len(matched_entities) / len(analysis.exact_entities)
             if matched_entities:
                 candidate.match_reasons.append(
-                    f"کلمات کلیدی: {', '.join(matched_entities[:4])}"
+                    t("reason_keywords", entities=", ".join(matched_entities[:4]))
                 )
 
         best_query_score = 0.0
@@ -232,12 +226,12 @@ class YouTubeSearcher:
             if diff_ratio <= 0.08 or diff_seconds <= 35:
                 duration_score = 1.0
                 candidate.match_reasons.append(
-                    f"تطابق دقیق زمانی ({candidate.formatted_duration})"
+                    t("reason_exact_duration", duration=candidate.formatted_duration)
                 )
             elif diff_ratio <= 0.20:
                 duration_score = 0.75
                 candidate.match_reasons.append(
-                    f"زمان نزدیک ({candidate.formatted_duration})"
+                    t("reason_close_duration", duration=candidate.formatted_duration)
                 )
             elif diff_ratio <= 0.35:
                 duration_score = 0.40

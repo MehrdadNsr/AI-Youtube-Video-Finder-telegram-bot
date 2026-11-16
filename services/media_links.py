@@ -9,6 +9,7 @@ from typing import Any, Literal
 import yt_dlp
 
 from config import Settings
+from services.i18n import t
 from services.job_manager import JobManager, JobRejectedError
 from services.link_server import LinkServer
 from services.subtitle_service import SubtitleService
@@ -74,7 +75,7 @@ class MediaLinkService:
             max_mins = self.settings.LINK_MAX_DURATION_SEC // 60
             raise JobRejectedError(
                 "link_video_too_long",
-                f"مدت زمان این ویدیو بیشتر از سقف مجاز لینک مستقیم ({max_mins} دقیقه) هست.",
+                t("job_err_link_too_long", max_mins=max_mins),
             )
 
     @staticmethod
@@ -115,7 +116,7 @@ class MediaLinkService:
             if f.startswith(prefix) and not f.endswith(".part")
         ]
         if not candidates:
-            raise RuntimeError("فایل رسانه از یوتیوب دانلود نشد (احتمالاً حجم بیش از حد مجاز یا محدودیت دسترسی).")
+            raise RuntimeError(t("media_err_download_failed"))
         return candidates[0]
 
     async def create_link(
@@ -124,12 +125,8 @@ class MediaLinkService:
         kind: LinkKind,
         progress_cb: ProgressCallback | None = None,
     ) -> CreatedMediaLink:
-        """
-        Build a direct streaming link for `kind` ('link_sub', 'link_orig', 'link_audio')
-        inside a managed temporary job directory and register the final file in LinkServer.
-        """
         if not self.link_server.is_enabled:
-            raise RuntimeError("سرویس لینک مستقیم روی این سرور فعال نشده است.")
+            raise RuntimeError(t("link_err_not_enabled"))
 
         meta = await self.subtitle_service.get_video_metadata(video_id)
         approx_timing = False
@@ -161,7 +158,7 @@ class MediaLinkService:
 
                 if progress_cb:
                     await progress_cb(
-                        55, "ترجمه زیرنویس کامل شد -> در حال دانلود ویدیو (720p)..."
+                        55, t("link_prog_sub_done_downloading")
                     )
 
                 raw_template = os.path.join(work_dir, "raw_media.%(ext)s")
@@ -171,9 +168,7 @@ class MediaLinkService:
                 raw_video_path = self._locate_downloaded_file(work_dir, "raw_media")
 
                 if progress_cb:
-                    await progress_cb(
-                        88, "در حال الصاق زیرنویس فارسی و انگلیسی (Zero-Encoding Mux)..."
-                    )
+                    await progress_cb(88, t("link_prog_muxing"))
 
                 muxed_path = os.path.join(work_dir, "muxed_softsub.mp4")
                 ffmpeg_cmd = [
@@ -226,7 +221,7 @@ class MediaLinkService:
                 if rc != 0 or not os.path.exists(muxed_path):
                     err_str = stderr.decode("utf-8", errors="ignore")[:250]
                     logger.error("FFmpeg link_sub mux failed: %s", err_str)
-                    raise RuntimeError("خطا در الصاق زیرنویس به فایل ویدیو.")
+                    raise RuntimeError(t("link_err_mux_failed"))
 
                 final_temp_path = muxed_path
                 dl_filename = self._clean_stream_filename(
@@ -236,9 +231,7 @@ class MediaLinkService:
 
             elif kind == "link_orig":
                 if progress_cb:
-                    await progress_cb(
-                        25, "در حال دانلود ویدیوی اصلی (تا کیفیت 720p)..."
-                    )
+                    await progress_cb(25, t("link_prog_downloading_orig"))
                 raw_template = os.path.join(work_dir, "orig_media.%(ext)s")
                 info = await asyncio.to_thread(
                     self._download_media_sync, video_id, raw_template, False
@@ -251,9 +244,7 @@ class MediaLinkService:
 
             else:  # link_audio
                 if progress_cb:
-                    await progress_cb(
-                        25, "در حال استخراج و دانلود فایل صوتی باکیفیت (M4A)..."
-                    )
+                    await progress_cb(25, t("link_prog_downloading_audio"))
                 raw_template = os.path.join(work_dir, "audio_media.%(ext)s")
                 info = await asyncio.to_thread(
                     self._download_media_sync, video_id, raw_template, True
@@ -294,7 +285,7 @@ class MediaLinkService:
                 content_type = "audio/mp4"
 
             if progress_cb:
-                await progress_cb(95, "در حال ساخت لینک مستقیم استریم...")
+                await progress_cb(95, t("link_prog_registering"))
 
             url, exp_ts, size_bytes = await self.link_server.register_file(
                 source_file_path=final_temp_path,
@@ -307,7 +298,7 @@ class MediaLinkService:
             channel = str(info.get("channel") or info.get("uploader") or meta.channel)
 
             if progress_cb:
-                await progress_cb(100, "لینک مستقیم آماده شد!")
+                await progress_cb(100, t("link_prog_done"))
 
             return CreatedMediaLink(
                 url=url,

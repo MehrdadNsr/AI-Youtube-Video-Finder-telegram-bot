@@ -14,6 +14,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 
 from services.job_manager import JobManager
 from services.llm_router import LLMRouter
+from services.i18n import t
 from services.transcript_provider import TranscriptProvider
 from services.youtube_searcher import YouTubeCandidate
 
@@ -413,9 +414,7 @@ class AudioVerifier:
                         matched_snippet=None,
                     )
                 if not match_results_by_id:
-                    self.last_fallback_notice_fa = (
-                        "تطبیق صوتی به خاطر محدودیت دسترسی یوتیوب انجام نشد و رتبه‌بندی بر اساس اطلاعات کپشنه."
-                    )
+                    self.last_fallback_notice_fa = t("audio_verify_fallback_notice")
 
         any_strong_audio_match = False
         strong_threshold = 0.58 if transcription.is_dubbed_translated else 0.68
@@ -442,7 +441,7 @@ class AudioVerifier:
                 ts_label = cand.formatted_timestamp or "00:00"
                 cand.match_reasons.insert(
                     0,
-                    f"تطابق صدای ویدئو ({cand.audio_match_percent}%) در دقیقه {ts_label}",
+                    t("reason_audio_match", pct=cand.audio_match_percent, ts=ts_label),
                 )
             elif match_res.match_score >= 0.50:
                 cand.matched_timestamp_seconds = match_res.start_seconds

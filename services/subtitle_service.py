@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from services.job_manager import JobManager
 from services.llm_router import LLMRouter
+from services.i18n import t
 from services.transcript_provider import TranscriptFetchError, TranscriptProvider
 from services.ytdlp_options import build_opts
 
@@ -390,11 +391,11 @@ class SubtitleService:
         if video_id in self._segments_cache:
             self._segments_cache.move_to_end(video_id)
             if progress_cb:
-                await progress_cb(100, "زیرنویس ترجمه‌شده از کش بارگذاری شد!")
+                await progress_cb(100, t("sub_prog_cached"))
             return self._segments_cache[video_id]
 
         if progress_cb:
-            await progress_cb(10, "در حال دریافت زیرنویس و تایم‌کدهای ویدیو...")
+            await progress_cb(10, t("sub_prog_fetching"))
 
         raw_items = await self._fetch_raw_segments(
             video_id, progress_cb=progress_cb
@@ -421,13 +422,13 @@ class SubtitleService:
                 pct = 25 + int((completed_batches / total_batches) * 70)
                 await progress_cb(
                     pct,
-                    f"در حال ترجمه هوشمند زیرنویس... (دسته {completed_batches} از {total_batches})",
+                    t("sub_prog_translating_batch", current=completed_batches, total=total_batches),
                 )
 
         if progress_cb:
             await progress_cb(
                 25,
-                f"شروع ترجمه {len(segments)} خط دیالوگ در {total_batches} دسته...",
+                t("sub_prog_starting_batches", lines=len(segments), batches=total_batches),
             )
 
         await asyncio.gather(*(_worker(b) for b in batches))
@@ -440,7 +441,7 @@ class SubtitleService:
             self._segments_cache.popitem(last=False)
 
         if progress_cb:
-            await progress_cb(100, "ترجمه زیرنویس فارسی کامل شد!")
+            await progress_cb(100, t("sub_prog_translation_done"))
 
         return segments
 
@@ -492,7 +493,7 @@ class SubtitleService:
             return self._summary_cache[video_id]
 
         if progress_cb:
-            await progress_cb(15, "در حال دریافت متن ویدیو...")
+            await progress_cb(15, t("sum_prog_fetching"))
 
         raw_items = await self._fetch_raw_segments(
             video_id, progress_cb=progress_cb
@@ -505,7 +506,7 @@ class SubtitleService:
 
         if progress_cb:
             await progress_cb(
-                65, "در حال استخراج نکات کلیدی و فصل‌بندی زمانی..."
+                65, t("sum_prog_analyzing")
             )
 
         prompt = f"Analyze this timestamped YouTube transcript:\n\n{full_transcript_text[:90000]}"
@@ -541,7 +542,7 @@ class SubtitleService:
             self._summary_cache.popitem(last=False)
 
         if progress_cb:
-            await progress_cb(100, "خلاصه هوشمند آماده شد!")
+            await progress_cb(100, t("sum_prog_done"))
 
         return summary
 
@@ -583,7 +584,7 @@ class SubtitleService:
         if progress_cb:
             await progress_cb(
                 60,
-                "ترجمه کامل شد -> در حال دانلود ویدیو از یوتیوب...",
+                t("mux_prog_downloading_video"),
             )
 
         raw_video_path = os.path.join(work_dir, "raw_video.mp4")
@@ -614,7 +615,7 @@ class SubtitleService:
                 if f.startswith("raw_video")
             ]
             if not candidates_files:
-                raise RuntimeError("دانلود فایل ویدیو از یوتیوب انجام نشد.")
+                raise RuntimeError(t("mux_err_download_failed"))
             raw_video_path = candidates_files[0]
 
         thumb_path = os.path.join(work_dir, "thumb.jpg")
@@ -627,7 +628,7 @@ class SubtitleService:
         if progress_cb:
             await progress_cb(
                 88,
-                "دریافت ویدیو کامل شد -> در حال الصاق سافت‌ساب فارسی (FFmpeg)...",
+                t("mux_prog_ffmpeg"),
             )
 
         muxed_output_path = os.path.join(work_dir, "output_softsub_fa.mp4")
@@ -683,10 +684,10 @@ class SubtitleService:
         if returncode != 0 or not os.path.exists(muxed_output_path):
             err_msg = stderr.decode("utf-8", errors="ignore")[:300]
             logger.error("FFmpeg softsub muxing failed: %s", err_msg)
-            raise RuntimeError("خطا در الصاق ترک زیرنویس با FFmpeg.")
+            raise RuntimeError(t("mux_err_ffmpeg"))
 
         if progress_cb:
-            await progress_cb(100, "ویدیوی سافت‌ساب آماده شد! در حال آپلود در تلگرام...")
+            await progress_cb(100, t("mux_prog_ready_uploading"))
 
         title = str(info.get("title") or f"YouTube_{video_id}")
         channel = str(info.get("channel") or info.get("uploader") or "YouTube")

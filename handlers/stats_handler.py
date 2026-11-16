@@ -11,6 +11,7 @@ from aiogram.types import BufferedInputFile, Message
 
 from config import settings
 from services.analytics import Analytics
+from services.i18n import t
 from services.job_manager import JobManager
 from services.llm_router import LLMRouter
 
@@ -108,24 +109,25 @@ async def cmd_version(
     job_manager: JobManager,
     analytics: Analytics,
 ) -> None:
-    """Answer /version for any user with build, model, and resource health metadata."""
+    """Answer /version for any user in their active language."""
     info = await get_version_info(llm_router, job_manager, analytics)
-    text = (
-        "🤖 <b>وضعیت و نسخه‌ی ربات:</b>\n\n"
-        f"• <b>کامیت (Git):</b> <code>{html.escape(info['commit'])}</code>\n"
-        f"• <b>تاریخ کامیت:</b> <code>{html.escape(info['commit_date'])}</code>\n"
-        f"• <b>زمان راه‌اندازی:</b> <code>{html.escape(info['started_utc'])}</code>\n"
-        f"• <b>آپ‌تایم:</b> <code>{html.escape(info['uptime'])}</code>\n"
-        f"• <b>مدل سریع فعال:</b> <code>{html.escape(info['fast_model'])}</code>\n"
-        f"• <b>مدارهای باز (Circuit Breaker):</b> <code>{html.escape(info['open_circuits'])}</code>\n"
-        f"• <b>پشتیبان OpenRouter:</b> <code>{info['openrouter_enabled']}</code>\n"
-        f"• <b>فضای خالی دیسک:</b> <code>{info['free_disk_mb']} MB</code>\n"
-        f"• <b>حجم پوشه کاری:</b> <code>{info['work_dir_size_mb']} MB</code>\n"
-        f"• <b>پردازش‌های فعال / صف:</b> <code>{info['active_jobs']} active / {info['queue_length']} queued</code>\n"
-        f"• <b>اتصال پروکسی یوتیوب:</b> <code>{info['proxy_reachable']}</code>\n"
-        f"• <b>نصب بودن Deno:</b> <code>{info['deno_found']}</code>\n"
-        f"• <b>مصرف امروز Gemini-URL:</b> <code>{info['gemini_url_today']}</code>\n"
-        f"• <b>مصرف ماهانه Supadata:</b> <code>{info['supadata_month']}</code>"
+    text = t(
+        "version_message",
+        commit=html.escape(info["commit"]),
+        commit_date=html.escape(info["commit_date"]),
+        started_utc=html.escape(info["started_utc"]),
+        uptime=html.escape(info["uptime"]),
+        fast_model=html.escape(info["fast_model"]),
+        open_circuits=html.escape(info["open_circuits"]),
+        openrouter_enabled=info["openrouter_enabled"],
+        free_disk_mb=info["free_disk_mb"],
+        work_dir_size_mb=info["work_dir_size_mb"],
+        active_jobs=info["active_jobs"],
+        queue_length=info["queue_length"],
+        proxy_reachable=info["proxy_reachable"],
+        deno_found=info["deno_found"],
+        gemini_url_today=info["gemini_url_today"],
+        supadata_month=info["supadata_month"],
     )
     await message.reply(text)
 
@@ -160,22 +162,32 @@ async def cmd_stats(
     tr = report["transcripts"]
 
     lines: list[str] = [
-        f"📊 <b>گزارش آماری ربات ({days} روز گذشته)</b>\n",
-        "👥 <b>کاربران یکتا:</b>",
-        f"• امروز: <code>{u['today']}</code> | ۷ روز: <code>{u['last_7_days']}</code> | کل: <code>{u['all_time']}</code>\n",
-        "🔍 <b>جستجوها:</b>",
-        f"• کل: <code>{s['total']}</code> | موفق: <code>{s['found']}</code> (<code>{s['success_rate_pct']}%</code>)",
-        f"• میانگین اطمینان: <code>{s['avg_confidence_pct']}%</code>\n",
-        "🎙 <b>تایید صوتی (Whisper):</b>",
-        f"• استفاده شده: <code>{av['used']}</code> | رد شده: <code>{av['skipped']}</code> | تایم‌اوت: <code>{av['timed_out']}</code>",
-        f"• زبان صدا: انگلیسی <code>{av['english']}</code> | دوبله <code>{av['dubbed']}</code>\n",
-        "🖥 <b>وضعیت منابع سرور:</b>",
-        f"• دیسک آزاد: <code>{health['free_disk_mb']} MB</code> | پوشه کاری: <code>{health['work_dir_size_mb']:.2f} MB</code>",
-        f"• کارهای فعال: <code>{health['active_jobs']}</code> | صف: <code>{health['queue_length']}</code>",
-        f"• پروکسی فعال: <code>{'yes' if health['proxy_reachable'] else 'no'}</code> | Deno: <code>{'yes' if health['deno_found'] else 'no'}</code>\n",
-        "📜 <b>منابع زیرنویس و سهمیه‌ها:</b>",
-        f"• مصرف امروز ویدئوی جمنای: <code>{tr['gemini_url_quota_today_sec']}s / {tr['gemini_url_daily_limit_sec']}s</code>",
-        f"• مصرف ماهانه Supadata: <code>{tr['supadata_credits_month']} / {tr['supadata_monthly_limit']}</code>",
+        t(
+            "stats_header_block",
+            days=days,
+            u_today=u["today"],
+            u_7d=u["last_7_days"],
+            u_all=u["all_time"],
+            s_total=s["total"],
+            s_found=s["found"],
+            s_rate=s["success_rate_pct"],
+            s_conf=s["avg_confidence_pct"],
+            av_used=av["used"],
+            av_skipped=av["skipped"],
+            av_timeout=av["timed_out"],
+            av_en=av["english"],
+            av_dub=av["dubbed"],
+            free_mb=health["free_disk_mb"],
+            work_mb=health["work_dir_size_mb"],
+            active_jobs=health["active_jobs"],
+            queue_len=health["queue_length"],
+            proxy_ok="yes" if health["proxy_reachable"] else "no",
+            deno_ok="yes" if health["deno_found"] else "no",
+            gem_used=tr["gemini_url_quota_today_sec"],
+            gem_limit=tr["gemini_url_daily_limit_sec"],
+            supa_used=tr["supadata_credits_month"],
+            supa_limit=tr["supadata_monthly_limit"],
+        )
     ]
 
     for src_name, src_data in tr.get("sources", {}).items():
@@ -184,7 +196,7 @@ async def cmd_stats(
         )
 
     if report["actions"]:
-        lines.append("\n🎛 <b>عملکرد دکمه‌ها:</b>")
+        lines.append(t("stats_sec_actions"))
         for act_name, act_data in report["actions"].items():
             lines.append(
                 f"• <code>{html.escape(act_name)}</code>: "
@@ -193,7 +205,7 @@ async def cmd_stats(
             )
 
     if report["pipeline_steps"]:
-        lines.append("\n⏱ <b>مراحل پایپ‌لاین:</b>")
+        lines.append(t("stats_sec_steps"))
         for st_name, st_data in report["pipeline_steps"].items():
             lines.append(
                 f"• <code>{html.escape(st_name)}</code>: "
@@ -201,12 +213,14 @@ async def cmd_stats(
                 f"(ok={st_data['ok']}, to={st_data['timeout']}, err={st_data['failed']})"
             )
 
-    lines.append("\n🧠 <b>مدل‌های هوش مصنوعی:</b>")
     lines.append(
-        f"• کل پاسخ‌ها: <code>{llm['total_answered']}</code> | سوییچ‌ها: <code>{llm['switches']}</code>"
-    )
-    lines.append(
-        f"• فال‌بک به OpenRouter امروز: <code>{llm['openrouter_fallbacks_today']}</code> | شکست کامل: <code>{llm['all_providers_failed']}</code>"
+        t(
+            "stats_sec_llm",
+            total=llm["total_answered"],
+            switches=llm["switches"],
+            or_today=llm["openrouter_fallbacks_today"],
+            all_failed=llm["all_providers_failed"],
+        )
     )
     for m_name, m_data in list(llm["models"].items())[:5]:
         lines.append(
@@ -214,16 +228,20 @@ async def cmd_stats(
         )
 
     if report["errors_and_timeouts"]:
-        lines.append("\n⚠️ <b>خطاها و تایم‌اوت‌ها:</b>")
+        lines.append(t("stats_sec_errors"))
         for err_key, cnt in list(report["errors_and_timeouts"].items())[:6]:
             lines.append(f"• <code>{html.escape(err_key)}</code>: <code>{cnt}</code>")
 
     if report["top_returning_users"]:
-        lines.append("\n🏆 <b>فعال‌ترین کاربران (Hash Prefix):</b>")
+        lines.append(t("stats_sec_top_users"))
         for u_item in report["top_returning_users"]:
             lines.append(
-                f"• <code>{u_item['hash_prefix']}</code>: "
-                f"جستجو={u_item['searches']} | اکشن={u_item['actions']}"
+                t(
+                    "stats_top_user_row",
+                    hash_prefix=u_item["hash_prefix"],
+                    searches=u_item["searches"],
+                    actions=u_item["actions"],
+                )
             )
 
     full_text = "\n".join(lines)
@@ -252,5 +270,5 @@ async def cmd_stats_export(
     doc = BufferedInputFile(file=json_bytes, filename=filename)
     await message.reply_document(
         document=doc,
-        caption=f"📁 خروجی کامل آمار ربات (بازه {days} روزه)",
+        caption=t("stats_export_caption", days=days),
     )

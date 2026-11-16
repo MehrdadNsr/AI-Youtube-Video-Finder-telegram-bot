@@ -16,6 +16,7 @@ from aiogram import Bot
 from config import Settings
 from middlewares.analytics_middleware import current_user_id_var
 from services.analytics import Analytics
+from services.i18n import t
 from services.ytdlp_options import check_ytdlp_runtime_dependencies
 
 logger = logging.getLogger(__name__)
@@ -265,7 +266,7 @@ class JobManager:
         try:
             await self._bot.send_message(
                 chat_id=self.settings.ADMIN_ID,
-                text=f"🚨 <b>هشدار سلامت سرور:</b>\n{text_fa}",
+                text=t("admin_alert_header", lang=self.settings.DEFAULT_LANG, text=text_fa),
             )
         except Exception as exc:
             logger.warning("Failed to send admin health alert: %s", exc)
@@ -286,12 +287,17 @@ class JobManager:
             if snap["free_disk_mb"] < self.settings.MIN_FREE_DISK_MB:
                 await self._send_admin_alert_throttled(
                     "low_disk",
-                    f"فضای خالی دیسک به <code>{snap['free_disk_mb']} MB</code> رسیده (کمتر از حد مجاز <code>{self.settings.MIN_FREE_DISK_MB} MB</code>).",
+                    t(
+                        "admin_alert_low_disk",
+                        lang=self.settings.DEFAULT_LANG,
+                        free_mb=snap["free_disk_mb"],
+                        min_mb=self.settings.MIN_FREE_DISK_MB,
+                    ),
                 )
             if snap["proxy_configured"] and not snap["proxy_reachable"]:
                 await self._send_admin_alert_throttled(
                     "proxy_down",
-                    "پروکسی یوتیوب (WARP/HTTP Proxy) در دسترس نیست و اتصال TCP برقرار نشد.",
+                    t("admin_alert_proxy_down", lang=self.settings.DEFAULT_LANG),
                 )
 
         return snap
@@ -314,7 +320,7 @@ class JobManager:
             max_mins = self.settings.SOFTSUB_MAX_DURATION_SEC // 60
             raise JobRejectedError(
                 "video_too_long",
-                f"این ویدئو بیشتر از {max_mins} دقیقه‌ست و ساخت سافت‌ساب براش فعال نیست؛ لطفاً از دکمه‌ی دانلود زیرنویس فارسی (.SRT) استفاده کن.",
+                t("job_err_video_too_long", max_mins=max_mins),
             )
 
     async def check_free_disk(self, user_id: int | None = None) -> None:
@@ -326,11 +332,11 @@ class JobManager:
             self._spawn_analytics(user_id, "job_rejected", reason="low_disk")
             await self._send_admin_alert_throttled(
                 "low_disk",
-                f"فضای خالی دیسک به <code>{free_mb} MB</code> رسیده و دانلودهای جدید متوقف شدن.",
+                t("admin_alert_low_disk_stop", lang=self.settings.DEFAULT_LANG, free_mb=free_mb),
             )
             raise JobRejectedError(
                 "low_disk",
-                "فضای خالی سرور موقتا کمه، چند دقیقه دیگه دوباره امتحان کن.",
+                t("job_err_low_disk"),
             )
 
     def _check_and_acquire_user_quota(self, user_id: int | None) -> None:
@@ -341,7 +347,7 @@ class JobManager:
             self._spawn_analytics(user_id, "job_rejected", reason="user_busy")
             raise JobRejectedError(
                 "user_busy",
-                "الان یه درخواست سنگین در حال پردازش داری، صبر کن تموم بشه بعد دوباره امتحان کن.",
+                t("job_err_user_busy"),
             )
 
         now = time.monotonic()
@@ -355,7 +361,7 @@ class JobManager:
             )
             raise JobRejectedError(
                 "user_rate_limit",
-                f"تعداد درخواست‌هات تو یک ساعت گذشته به سقف مجاز ({self.settings.USER_HEAVY_JOBS_PER_HOUR} بار) رسیده، کمی بعد دوباره امتحان کن.",
+                t("job_err_user_rate_limit", limit=self.settings.USER_HEAVY_JOBS_PER_HOUR),
             )
 
         history.append(now)
@@ -375,7 +381,7 @@ class JobManager:
         if self.is_shutting_down:
             raise JobRejectedError(
                 "shutting_down",
-                "ربات داره آپدیت می‌شه، چند ثانیه دیگه دوباره امتحان کن",
+                t("job_err_shutting_down"),
             )
 
         pool = self._pools[kind]
@@ -390,7 +396,7 @@ class JobManager:
                 )
                 raise JobRejectedError(
                     "queue_full",
-                    "الان سرور شلوغه، چند دقیقه دیگه امتحان کن",
+                    t("job_err_queue_full"),
                 )
 
             my_event = asyncio.Event()
@@ -416,7 +422,7 @@ class JobManager:
                 self._wake_next_waiter(pool)
                 raise JobRejectedError(
                     "shutting_down",
-                    "ربات داره آپدیت می‌شه، چند ثانیه دیگه دوباره امتحان کن",
+                    t("job_err_shutting_down"),
                 )
 
         try:
@@ -454,7 +460,7 @@ class JobManager:
             )
             raise JobRejectedError(
                 "shutting_down",
-                "ربات داره آپدیت می‌شه، چند ثانیه دیگه دوباره امتحان کن",
+                t("job_err_shutting_down"),
             )
 
         if require_disk_check:
@@ -578,7 +584,7 @@ class JobManager:
                 "Cancelling %d remaining heavy job(s) after 20s shutdown grace period.",
                 len(remaining_jobs),
             )
-            shutdown_msg = "ربات داره آپدیت می‌شه، چند ثانیه دیگه دوباره امتحان کن"
+            shutdown_msg = t("job_err_shutting_down")
             for job in remaining_jobs:
                 if job.notify_cb:
                     with contextlib.suppress(Exception):

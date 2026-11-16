@@ -23,6 +23,7 @@ from config import settings
 from services.analytics import Analytics
 from services.audio_verifier import AudioVerifier, AudioTranscriptionResult
 from services.gemini_extractor import GeminiExtractor, CaptionAnalysisResult
+from services.i18n import set_current_lang, t
 from services.job_manager import JobManager, JobRejectedError
 from services.llm_router import LLMCallMeta, LLMRouter
 from services.subtitle_service import SubtitleService, VideoSummarySchema
@@ -32,21 +33,19 @@ from services.youtube_searcher import YouTubeSearcher, YouTubeCandidate
 logger = logging.getLogger(__name__)
 router = Router(name="video_source_router")
 
-OPENROUTER_FOOTER_TEMPLATE = (
-    "\n<i>🤖 این نتیجه با مدل پشتیبان ساخته شد (جمنای در دسترس نبود)</i> "
-    "<code>{model}</code>"
-)
-APPROXIMATE_TIMING_LINE_FA = (
-    "⏱ <i>زمان‌بندی این زیرنویس تقریبیه (متن از روی صدا ساخته شده)</i>"
-)
-
 
 class VideoActionCallback(CallbackData, prefix="vact"):
-    """CallbackData for inline subtitle, softsub, summary, and web player actions."""
+    """CallbackData for inline subtitle, softsub, summary, web player, and direct link actions."""
 
-    action: str  # "srt_fa" | "srt_bi" | "mux_cc" | "summary" | "web_play"
+    action: str  # "srt_fa" | "srt_bi" | "mux_cc" | "summary" | "web_play" | "link_sub" | "link_orig" | "link_audio"
     video_id: str
     start_sec: int = 0
+
+
+class LangSelectCallback(CallbackData, prefix="lang"):
+    """CallbackData for switching user interface language ('fa' or 'en')."""
+
+    lang: str
 
 
 # ─────────────────────────────────────────────────────────────
@@ -60,18 +59,18 @@ class LiveProgressTracker:
     with a background 3-second heartbeat task showing elapsed seconds.
     """
 
-    STEP_TITLES: dict[int, tuple[int, str]] = {
-        1: (10, "تحلیل کپشن و استخراج سرنخ‌ها"),
-        2: (35, "جستجو در یوتیوب و پیدا کردن کاندیداها"),
-        3: (60, "استخراج صدای ویدیو"),
-        4: (75, "تبدیل صدا به متن (Whisper)"),
-        5: (85, "تطبیق متن صدا با زیرنویس یوتیوب"),
+    STEP_KEYS: dict[int, tuple[int, str]] = {
+        1: (10, "step_1_title"),
+        2: (35, "step_2_title"),
+        3: (60, "step_3_title"),
+        4: (75, "step_4_title"),
+        5: (85, "step_5_title"),
     }
 
     def __init__(self, status_message: Message) -> None:
         self.status_message = status_message
         self.percent = 0
-        self.history: list[tuple[str, int, str]] = []  # (icon, pct, title)
+        self.history: list[tuple[str, int, str]] = []  # (icon, pct, localized_title)
         self.current_step: tuple[int, str] | None = None
         self.sub_activity: str = ""
         self.step_started_at: float = time.monotonic()
@@ -88,7 +87,7 @@ class LiveProgressTracker:
     def _compose_text(self) -> str:
         bar = self.build_bar(self.percent)
         lines: list[str] = [
-            "🔎 <b>در حال پیدا کردن منبع اصلی ویدیو...</b>",
+            t("progress_header"),
             f"<code>[{bar}] {self.percent}%</code>\n",
         ]
 
@@ -152,9 +151,9 @@ class LiveProgressTracker:
         sub_activity: str,
         advance_ceiling: int | None = None,
     ) -> None:
-        step_pct, title = self.STEP_TITLES[step_num]
+        step_pct, title_key = self.STEP_KEYS[step_num]
         self.percent = max(self.percent, step_pct)
-        self.current_step = (step_pct, title)
+        self.current_step = (step_pct, t(title_key))
         self.sub_activity = sub_activity
         self.step_started_at = time.monotonic()
         self.advance_pct_ceiling = advance_ceiling
@@ -165,14 +164,14 @@ class LiveProgressTracker:
         await self._safe_edit()
 
     def finish_step(self, step_num: int, status: str = "done") -> None:
-        step_pct, title = self.STEP_TITLES[step_num]
+        step_pct, title_key = self.STEP_KEYS[step_num]
         icon_map = {
             "done": "✅",
             "skipped": "⏭",
             "warn": "⚠️",
         }
         icon = icon_map.get(status, "✅")
-        self.history.append((icon, step_pct, title))
+        self.history.append((icon, step_pct, t(title_key)))
         self.current_step = None
         self.advance_pct_ceiling = None
 
@@ -195,7 +194,7 @@ class ActionStatusAnimator:
         self.title = title
         self.pipeline_header = pipeline_header
         self.percent = 5
-        self.stage_text = "در حال آماده‌سازی..."
+        self.stage_text = t("animator_preparing")
         self.started_at = time.monotonic()
         self.last_rendered = ""
         self._heartbeat_task: asyncio.Task[None] | None = None
@@ -204,11 +203,12 @@ class ActionStatusAnimator:
     def _compose(self) -> str:
         bar = LiveProgressTracker.build_bar(self.percent)
         elapsed = int(time.monotonic() - self.started_at)
+        status_label = t("animator_status_label")
         return (
             f"🎬 <b>{html.escape(self.title)}</b>\n\n"
             f"🔄 {html.escape(self.pipeline_header)}\n"
             f"<code>[{bar}] {self.percent}%</code>\n\n"
-            f"📡 <b>وضعیت:</b> {html.escape(self.stage_text)} <code>({elapsed}s)</code>"
+            f"📡 <b>{html.escape(status_label)}:</b> {html.escape(self.stage_text)} <code>({elapsed}s)</code>"
         )
 
     async def _safe_edit(self) -> None:
@@ -249,31 +249,59 @@ class ActionStatusAnimator:
 
 
 # ─────────────────────────────────────────────────────────────
-# Basic Commands (/start & /help)
+# Basic Commands (/start, /help, /lang)
 # ─────────────────────────────────────────────────────────────
 
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    welcome_text = (
-        "👋 <b>به ربات هوشمند پیدا کردن منبع و زیرنویس ویدیو خوش اومدی!</b>\n\n"
-        "✨ <b>چطوری کار می‌کنه؟</b>\n"
-        "کافیه هر پست ویدیویی از کانال‌های تلگرام رو برام <b>Forward</b> کنی:\n"
-        "1️⃣ لینک اصلی ویدیو رو تو یوتیوب پیدا می‌کنم.\n"
-        "2️⃣ صدای ویدیو رو بررسی می‌کنم تا <b>ثانیه‌ی دقیق شروع کلیپ</b> مشخص بشه.\n"
-        "3️⃣ می‌تونی با یه کلیک <b>زیرنویس فارسی (.SRT)</b>، <b>ویدیوی سافت‌ساب</b> یا <b>خلاصه هوشمند</b> بگیری."
-    )
-    await message.answer(welcome_text)
+    await message.answer(t("welcome_message"))
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    help_text = (
-        "📖 <b>راهنمای استفاده از ربات:</b>\n\n"
-        "• پست کانال تلگرام (ویدیو به همراه کپشن) رو برای ربات فوروارد کن.\n"
-        "• بعد از پیدا شدن منبع، از دکمه‌های شیشه‌ای زیر پیام برای دانلود زیرنویس فارسی، "
-        "ویدیوی سافت‌ساب، خلاصه نکات کلیدی یا پلیر تحت وب استفاده کن."
+    await message.answer(t("help_message"))
+
+
+def _build_lang_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("lang_btn_fa", lang="fa"),
+                    callback_data=LangSelectCallback(lang="fa").pack(),
+                ),
+                InlineKeyboardButton(
+                    text=t("lang_btn_en", lang="en"),
+                    callback_data=LangSelectCallback(lang="en").pack(),
+                ),
+            ]
+        ]
     )
-    await message.answer(help_text)
+
+
+@router.message(Command("lang"))
+async def cmd_lang(message: Message) -> None:
+    await message.reply(
+        t("lang_choose_prompt"),
+        reply_markup=_build_lang_keyboard(),
+    )
+
+
+@router.callback_query(LangSelectCallback.filter(F.lang.in_({"fa", "en"})))
+async def cb_select_lang(
+    callback: CallbackQuery,
+    callback_data: LangSelectCallback,
+    analytics: Analytics,
+) -> None:
+    chosen = "en" if callback_data.lang == "en" else "fa"
+    if callback.from_user:
+        await analytics.set_user_lang(callback.from_user.id, chosen)
+    set_current_lang(chosen)
+    confirm_text = t("lang_switched_confirm", lang=chosen)
+    await callback.answer(confirm_text, show_alert=False)
+    if callback.message:
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(confirm_text)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -288,19 +316,19 @@ def _build_control_panel_keyboard(
     start_sec = best.matched_timestamp_seconds or 0
 
     if best.matched_timestamp_seconds is not None:
-        watch_label = f"▶️ تماشا از دقیقه {best.formatted_timestamp} در یوتیوب"
+        watch_label = t("btn_watch_at_ts", ts=best.formatted_timestamp)
     else:
-        watch_label = "▶️ تماشای ویدیوی اصلی در یوتیوب"
+        watch_label = t("btn_watch_main")
 
     share_text = quote(
-        f"🎬 منبع اصلی ویدیو در یوتیوب:\n{best.title}\n🔗 {best.deep_link_url}"
+        t("share_text_template", title=best.title, url=best.deep_link_url)
     )
 
     rows: list[list[InlineKeyboardButton]] = [
         [InlineKeyboardButton(text=watch_label, url=best.deep_link_url)],
         [
             InlineKeyboardButton(
-                text="📥 دانلود زیرنویس فارسی (.SRT)",
+                text=t("btn_dl_srt_fa"),
                 callback_data=VideoActionCallback(
                     action="srt_fa", video_id=vid_id, start_sec=start_sec
                 ).pack(),
@@ -308,7 +336,7 @@ def _build_control_panel_keyboard(
         ],
         [
             InlineKeyboardButton(
-                text="🎬 دانلود ویدیو با سافت‌ساب (CC فارسی)",
+                text=t("btn_dl_softsub"),
                 callback_data=VideoActionCallback(
                     action="mux_cc", video_id=vid_id, start_sec=start_sec
                 ).pack(),
@@ -320,19 +348,19 @@ def _build_control_panel_keyboard(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="🔗 لینک سافت‌ساب",
+                    text=t("btn_link_sub"),
                     callback_data=VideoActionCallback(
                         action="link_sub", video_id=vid_id, start_sec=start_sec
                     ).pack(),
                 ),
                 InlineKeyboardButton(
-                    text="🔗 لینک اصلی",
+                    text=t("btn_link_orig"),
                     callback_data=VideoActionCallback(
                         action="link_orig", video_id=vid_id, start_sec=start_sec
                     ).pack(),
                 ),
                 InlineKeyboardButton(
-                    text="🎧 لینک صدا",
+                    text=t("btn_link_audio"),
                     callback_data=VideoActionCallback(
                         action="link_audio", video_id=vid_id, start_sec=start_sec
                     ).pack(),
@@ -344,13 +372,13 @@ def _build_control_panel_keyboard(
         [
             [
                 InlineKeyboardButton(
-                    text="📝 نکات کلیدی و خلاصه هوشمند",
+                    text=t("btn_smart_summary"),
                     callback_data=VideoActionCallback(
                         action="summary", video_id=vid_id, start_sec=start_sec
                     ).pack(),
                 ),
                 InlineKeyboardButton(
-                    text="🔄 زیرنویس دوزبانه (FA+EN)",
+                    text=t("btn_dl_srt_bi"),
                     callback_data=VideoActionCallback(
                         action="srt_bi", video_id=vid_id, start_sec=start_sec
                     ).pack(),
@@ -358,13 +386,13 @@ def _build_control_panel_keyboard(
             ],
             [
                 InlineKeyboardButton(
-                    text="🌐 تماشای آنلاین با زیرنویس در وب",
+                    text=t("btn_web_player"),
                     callback_data=VideoActionCallback(
                         action="web_play", video_id=vid_id, start_sec=start_sec
                     ).pack(),
                 ),
                 InlineKeyboardButton(
-                    text="📤 اشتراک‌گذاری",
+                    text=t("btn_share"),
                     url=f"https://t.me/share/url?url={quote(best.deep_link_url)}&text={share_text}",
                 ),
             ],
@@ -374,7 +402,9 @@ def _build_control_panel_keyboard(
     thumb_row: list[InlineKeyboardButton] = []
     for idx, cand in enumerate(candidates[:3], start=1):
         thumb_row.append(
-            InlineKeyboardButton(text=f"🖼 کاور گزینه {idx}", url=cand.thumbnail_url)
+            InlineKeyboardButton(
+                text=t("btn_thumb_n", idx=idx), url=cand.thumbnail_url
+            )
         )
     if thumb_row:
         rows.append(thumb_row)
@@ -418,98 +448,112 @@ def _format_final_response(
     candidates: list[YouTubeCandidate],
     analysis: CaptionAnalysisResult | None,
     transcription: AudioTranscriptionResult | None,
-    warnings_fa: list[str],
+    warnings_list: list[str],
     openrouter_model: str | None = None,
 ) -> str:
-    """Format final result message, keeping total length safely under Telegram's 4096-character limit."""
+    """Format final result message in the active language, keeping length under 4096 characters."""
     best = candidates[0]
     medals = ["🥇", "🥈", "🥉"]
 
     header_status = (
-        "✅ <b>منبع اصلی ویدیو با تایید صوتی پیدا شد!</b>"
+        t("res_header_audio_verified")
         if best.audio_match_score and best.audio_match_score >= 0.55
-        else "✅ <b>بهترین منبع منطبق در یوتیوب پیدا شد!</b>"
+        else t("res_header_metadata_match")
     )
 
     lines: list[str] = [
         f"{header_status}\n",
-        f"🏆 <b>انتخاب اول: {html.escape(best.title[:160])}</b>",
-        f"👤 <b>کانال یوتیوب:</b> <code>{html.escape(best.channel[:80])}</code>",
-        f"⏱ <b>مدت زمان کل:</b> <code>{best.formatted_duration}</code>",
-        f"🎯 <b>اطمینان نهایی:</b> <b>{best.confidence_percent}%</b>",
+        t("res_top_choice", title=html.escape(best.title[:160])),
+        t("res_channel", channel=html.escape(best.channel[:80])),
+        t("res_duration", duration=html.escape(best.formatted_duration)),
+        t("res_confidence", pct=best.confidence_percent),
     ]
 
     if best.formatted_timestamp:
         lines.append(
-            f"📍 <b>نقطه شروع کلیپ شما در یوتیوب:</b> از دقیقه <code>{best.formatted_timestamp}</code> (ثانیه {best.matched_timestamp_seconds})"
+            t(
+                "res_timestamp",
+                ts=best.formatted_timestamp,
+                sec=best.matched_timestamp_seconds,
+            )
         )
 
     if best.match_reasons:
         reasons_str = " | ".join(html.escape(r) for r in best.match_reasons[:3])
-        lines.append(f"💡 <b>دلایل تطابق:</b> <i>{reasons_str}</i>")
+        lines.append(t("res_match_reasons", reasons=reasons_str))
 
     if best.matched_transcript_snippet:
         lines.append(
-            f"🗣 <b>بخشی از دیالوگ تطبیق‌یافته:</b>\n"
-            f"<blockquote>«{html.escape(best.matched_transcript_snippet[:180])}»</blockquote>"
+            t(
+                "res_matched_quote",
+                snippet=html.escape(best.matched_transcript_snippet[:180]),
+            )
         )
 
     lines.append(
-        f"\n🔗 <b>لینک مستقیم تماشا:</b>\n{html.escape(best.deep_link_url)}\n"
-        f"🖼 <a href='{html.escape(best.thumbnail_url)}'>مشاهده تصویر کاور (Thumbnail)</a>"
+        t(
+            "res_direct_link_block",
+            url=html.escape(best.deep_link_url),
+            thumb=html.escape(best.thumbnail_url),
+        )
     )
 
     if len(candidates) > 1:
         lines.append("\n━━━━━━━━━━━━━━━━━━")
-        lines.append("🗂 <b>کارت‌های مقایسه ۳ کاندیدای برتر:</b>\n")
+        lines.append(t("res_candidates_header"))
 
         for idx, cand in enumerate(candidates[:3]):
             medal = medals[idx] if idx < len(medals) else f"{idx + 1}."
             ts_badge = (
-                f" | 📍 دقیقه <code>{cand.formatted_timestamp}</code>"
+                t("res_cand_ts_badge", ts=cand.formatted_timestamp)
                 if cand.formatted_timestamp
                 else ""
             )
             audio_badge = (
-                f" | 🎙 صدا: <code>{cand.audio_match_percent}%</code>"
+                t("res_cand_audio_badge", pct=cand.audio_match_percent)
                 if cand.audio_match_percent is not None
                 else ""
             )
 
             lines.append(
-                f"{medal} <b>{html.escape(cand.title[:110])}</b>\n"
-                f"   📺 کانال: <code>{html.escape(cand.channel[:60])}</code>\n"
-                f"   ⏱ زمان: <code>{cand.formatted_duration}</code> | 📊 اطمینان: <b>{cand.confidence_percent}%</b>{audio_badge}{ts_badge}\n"
-                f"   🔗 <a href='{html.escape(cand.deep_link_url)}'>لینک ویدیو</a>  •  "
-                f"🖼 <a href='{html.escape(cand.thumbnail_url)}'>پیش‌نمایش تامبنیل</a>\n"
+                t(
+                    "res_cand_card",
+                    medal=medal,
+                    title=html.escape(cand.title[:110]),
+                    channel=html.escape(cand.channel[:60]),
+                    duration=html.escape(cand.formatted_duration),
+                    pct=cand.confidence_percent,
+                    audio_badge=audio_badge,
+                    ts_badge=ts_badge,
+                    url=html.escape(cand.deep_link_url),
+                    thumb=html.escape(cand.thumbnail_url),
+                )
             )
 
     if analysis and analysis.exact_entities:
         entities_str = ", ".join(html.escape(e) for e in analysis.exact_entities[:6])
         lines.append("───────────────")
-        lines.append(f"🧩 <b>موجودیت‌ها:</b> <code>{entities_str}</code>")
+        lines.append(t("res_entities", entities=entities_str))
 
     if transcription:
         lang_tag = (
-            f"{transcription.detected_language} (ترجمه‌شده از دوبله)"
+            t("res_dubbed_tag", lang=transcription.detected_language)
             if transcription.is_dubbed_translated
             else transcription.detected_language
         )
-        lines.append(f"🎙 <b>زبان صدای تشخیص‌داده‌شده:</b> <code>{html.escape(lang_tag)}</code>")
+        lines.append(
+            t("res_detected_audio_lang", lang_tag=html.escape(lang_tag))
+        )
 
-    for w_line in warnings_fa:
+    for w_line in warnings_list:
         lines.append(f"⚠️ <i>{html.escape(w_line)}</i>")
 
     if openrouter_model:
         lines.append(
-            OPENROUTER_FOOTER_TEMPLATE.format(
-                model=html.escape(openrouter_model)
-            )
+            t("openrouter_footer", model=html.escape(openrouter_model))
         )
 
-    lines.append(
-        "\n🎛 <i>از دکمه‌های زیر برای دانلود زیرنویس، سافت‌ساب یا خلاصه استفاده کن:</i>"
-    )
+    lines.append(t("res_control_panel_hint"))
     out = "\n".join(lines)
     if len(out) > 4000:
         out = out[:3990] + "\n..."
@@ -536,24 +580,19 @@ async def handle_incoming_post(
     file_id, file_size = _extract_media_file_info(message)
 
     if len(raw_caption) < 10 and not file_id:
-        await message.reply(
-            "⚠️ <b>ورودی کافی نیست!</b>\n"
-            "لطفاً یک پست ویدیویی از کانال‌های تلگرام رو به همراه کپشن برام فوروارد کن."
-        )
+        await message.reply(t("err_insufficient_input"))
         return
 
     search_t0 = time.monotonic()
-    status_msg = await message.reply("⏳ <i>در حال شروع جستجوی منبع ویدیو...</i>")
+    status_msg = await message.reply(t("init_search_status"))
     progress = LiveProgressTracker(status_msg)
     progress.start_heartbeat()
 
-    warnings_fa: list[str] = []
+    warnings_list: list[str] = []
 
     async def _on_llm_switch(meta: LLMCallMeta) -> None:
         if meta.provider == "openrouter":
-            await progress.set_sub_activity(
-                "جمنای در دسترس نبود، با مدل پشتیبان (OpenRouter) ادامه می‌دم..."
-            )
+            await progress.set_sub_activity(t("sub_openrouter_switch"))
 
     try:
         async with llm_router.request_context(
@@ -564,13 +603,9 @@ async def handle_incoming_post(
             audio_bytes: bytes | None = None
             audio_extracted_early = False
 
-            # ─────────────────────────────────────────────────────────
             # Step 1 [10%]: Caption Analysis (timeout: 50s)
-            # ─────────────────────────────────────────────────────────
             if len(raw_caption) >= 10:
-                await progress.begin_step(
-                    1, "جمنای داره کپشن رو تحلیل می‌کنه..."
-                )
+                await progress.begin_step(1, t("sub_analyzing_caption"))
                 step_t0 = time.monotonic()
                 logger.info("Step 'caption' started")
                 try:
@@ -593,16 +628,14 @@ async def handle_incoming_post(
                         user_id, "step_done", step="caption", seconds=dur, status="timeout"
                     )
                     progress.finish_step(1, "warn")
-                    warnings_fa.append("تحلیل کپشن بیش از حد طول کشید (تایم‌اوت شد).")
+                    warnings_list.append(t("warn_caption_timeout"))
             else:
                 progress.finish_step(1, "skipped")
 
             # Fallback to audio transcript if caption analysis produced no queries and media exists
             if (not analysis or not analysis.search_queries) and file_id:
                 audio_extracted_early = True
-                await progress.begin_step(
-                    3, "کپشن کافی نبود؛ در حال استخراج صدای ویدیو..."
-                )
+                await progress.begin_step(3, t("sub_early_audio_fallback"))
                 step_t0 = time.monotonic()
                 logger.info("Step 'audio' (early fallback) started")
                 try:
@@ -624,12 +657,10 @@ async def handle_incoming_post(
                         user_id, "step_done", step="audio", seconds=dur, status="timeout"
                     )
                     progress.finish_step(3, "warn")
-                    warnings_fa.append("استخراج صدای ویدیو تایم‌اوت شد.")
+                    warnings_list.append(t("warn_audio_extract_timeout"))
 
                 if audio_bytes:
-                    await progress.begin_step(
-                        4, "ویسپر داره صدا رو به متن تبدیل می‌کنه..."
-                    )
+                    await progress.begin_step(4, t("sub_whisper_transcribing"))
                     step_t0 = time.monotonic()
                     logger.info("Step 'whisper' (early fallback) started")
                     try:
@@ -651,11 +682,11 @@ async def handle_incoming_post(
                             user_id, "step_done", step="whisper", seconds=dur, status="timeout"
                         )
                         progress.finish_step(4, "warn")
-                        warnings_fa.append("تبدیل صدا به متن (Whisper) تایم‌اوت شد.")
+                        warnings_list.append(t("warn_whisper_timeout"))
 
                     if transcription and transcription.english_search_text:
                         await progress.set_sub_activity(
-                            "ساخت کوئری جستجو از روی متن صدای ویدیو..."
+                            t("sub_queries_from_transcript")
                         )
                         with contextlib.suppress(asyncio.TimeoutError):
                             analysis = await asyncio.wait_for(
@@ -671,26 +702,16 @@ async def handle_incoming_post(
                     user_id, "search_failed", reason="no_clues"
                 )
                 if routing_scope.all_failed:
-                    err_msg = (
-                        "❌ <b>هیچ‌کدوم از مدل‌ها جواب ندادن، چند دقیقه دیگه دوباره امتحان کن.</b>"
-                    )
+                    err_msg = t("err_all_models_failed")
                 elif not file_id:
-                    err_msg = (
-                        "❌ <b>تحلیل متن به نتیجه نرسید؛ اگه فایل ویدیو رو داری، خود ویدیو رو با صداش بفرست.</b>"
-                    )
+                    err_msg = t("err_caption_failed_send_video")
                 else:
-                    err_msg = (
-                        "❌ <b>سرنخ کافی توی کپشن یا صدای ویدیو پیدا نشد.</b>"
-                    )
+                    err_msg = t("err_no_clues_found")
                 await status_msg.edit_text(err_msg)
                 return
 
-            # ─────────────────────────────────────────────────────────
             # Step 2 [35%]: YouTube Search (timeout: 40s)
-            # ─────────────────────────────────────────────────────────
-            await progress.begin_step(
-                2, "در حال جستجوی کاندیداها در یوتیوب..."
-            )
+            await progress.begin_step(2, t("sub_searching_youtube"))
             step_t0 = time.monotonic()
             logger.info("Step 'search' started")
             candidates: list[YouTubeCandidate] = []
@@ -713,27 +734,19 @@ async def handle_incoming_post(
                     user_id, "step_done", step="search", seconds=dur, status="timeout"
                 )
                 progress.finish_step(2, "warn")
-                warnings_fa.append("جستجوی یوتیوب تایم‌اوت شد.")
 
             if not candidates:
                 await progress.stop_heartbeat()
                 await analytics.log_event(
                     user_id, "search_failed", reason="no_results"
                 )
-                await status_msg.edit_text(
-                    "😕 <b>هیچ ویدیوی مشابهی در یوتیوب پیدا نشد.</b>\n"
-                    "ممکنه منبع اصلی این کلیپ توی شبکه X (توییتر) یا TikTok باشه."
-                )
+                await status_msg.edit_text(t("err_no_youtube_results"))
                 return
 
-            # ─────────────────────────────────────────────────────────
             # Steps 3, 4, 5: Audio Extraction (40s), Whisper (45s), Transcript Matching (60s)
-            # ─────────────────────────────────────────────────────────
             if file_id:
                 if not audio_extracted_early:
-                    await progress.begin_step(
-                        3, "در حال استخراج ۴۰ ثانیه اول صدای ویدیو..."
-                    )
+                    await progress.begin_step(3, t("sub_extracting_40s_audio"))
                     step_t0 = time.monotonic()
                     logger.info("Step 'audio' started")
                     try:
@@ -755,12 +768,10 @@ async def handle_incoming_post(
                             user_id, "step_done", step="audio", seconds=dur, status="timeout"
                         )
                         progress.finish_step(3, "warn")
-                        warnings_fa.append("مرحله‌ی استخراج صدای ویدیو تایم‌اوت شد.")
+                        warnings_list.append(t("warn_audio_extract_timeout"))
 
                 if audio_bytes and not transcription:
-                    await progress.begin_step(
-                        4, "ویسپر داره صدا رو به متن تبدیل می‌کنه..."
-                    )
+                    await progress.begin_step(4, t("sub_whisper_transcribing"))
                     step_t0 = time.monotonic()
                     logger.info("Step 'whisper' started")
                     try:
@@ -782,14 +793,14 @@ async def handle_incoming_post(
                             user_id, "step_done", step="whisper", seconds=dur, status="timeout"
                         )
                         progress.finish_step(4, "warn")
-                        warnings_fa.append("مرحله‌ی تبدیل صدا به متن (Whisper) تایم‌اوت شد.")
+                        warnings_list.append(t("warn_whisper_timeout"))
 
                 if transcription and transcription.english_search_text:
                     # Percent inside transcript matching advances by time estimation capped at 96%
                     # because AudioVerifier.verify_and_rerank_candidates fetches all candidates in parallel.
                     await progress.begin_step(
                         5,
-                        f"در حال تطبیق زیرنویس با {len(candidates)} کاندیدای برتر...",
+                        t("sub_matching_candidates", count=len(candidates)),
                         advance_ceiling=96,
                     )
                     step_t0 = time.monotonic()
@@ -808,7 +819,7 @@ async def handle_incoming_post(
                         )
                         progress.finish_step(5, "done")
                         if audio_verifier.last_fallback_notice_fa:
-                            warnings_fa.append(audio_verifier.last_fallback_notice_fa)
+                            warnings_list.append(audio_verifier.last_fallback_notice_fa)
                     except asyncio.TimeoutError:
                         dur = round(time.monotonic() - step_t0, 3)
                         logger.info("Step 'match' finished in %.2fs (status=timeout)", dur)
@@ -816,9 +827,7 @@ async def handle_incoming_post(
                             user_id, "step_done", step="match", seconds=dur, status="timeout"
                         )
                         progress.finish_step(5, "warn")
-                        warnings_fa.append(
-                            "تطبیق زیرنویس یوتیوب تایم‌اوت شد؛ رتبه‌بندی بر اساس اطلاعات کپشنه."
-                        )
+                        warnings_list.append(t("warn_match_timeout"))
                 else:
                     progress.finish_step(5, "skipped")
             else:
@@ -826,7 +835,7 @@ async def handle_incoming_post(
                 progress.finish_step(4, "skipped")
                 progress.finish_step(5, "skipped")
 
-            await progress.mark_complete("رتبه‌بندی نهایی آماده شد!")
+            await progress.mark_complete(t("sub_ranking_ready"))
             await progress.stop_heartbeat()
 
             top_candidates = candidates[:3]
@@ -863,7 +872,7 @@ async def handle_incoming_post(
                 candidates=top_candidates,
                 analysis=analysis,
                 transcription=transcription,
-                warnings_fa=warnings_fa,
+                warnings_list=warnings_list,
                 openrouter_model=(
                     routing_scope.openrouter_model
                     if routing_scope.openrouter_used
@@ -889,9 +898,7 @@ async def handle_incoming_post(
         await analytics.log_event(
             user_id, "search_failed", reason="exception"
         )
-        await status_msg.edit_text(
-            "⚠️ <b>خطایی موقع پردازش پیش اومد، چند لحظه دیگه دوباره امتحان کن.</b>"
-        )
+        await status_msg.edit_text(t("err_unhandled_search"))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -912,24 +919,20 @@ async def cb_download_srt(
     is_bilingual = action_name == "srt_bi"
     mode = "bilingual" if is_bilingual else "fa"
     suffix = "_FA_EN.srt" if is_bilingual else "_FA.srt"
-    mode_title = (
-        "زیرنویس دوزبانه (فارسی + انگلیسی)"
-        if is_bilingual
-        else "زیرنویس فارسی (.SRT)"
-    )
+    mode_title = t("srt_mode_bi") if is_bilingual else t("srt_mode_fa")
 
-    await callback.answer(f"⏳ در حال آماده‌سازی {mode_title}...")
+    await callback.answer(t("cb_preparing_item", item=mode_title))
     if not callback.message:
         return
 
     meta = await subtitle_service.get_video_metadata(callback_data.video_id)
     status_msg = await callback.message.reply(
-        f"⏳ <b>در حال آماده‌سازی {mode_title}...</b>"
+        t("msg_preparing_item", item=html.escape(mode_title))
     )
     animator = ActionStatusAnimator(
         status_msg=status_msg,
         title=meta.title,
-        pipeline_header="دریافت تایم‌کدها -> ترجمه هوشمند -> ساخت فایل SRT",
+        pipeline_header=t("pipe_srt"),
     )
     animator.start_heartbeat()
     t0 = time.monotonic()
@@ -938,15 +941,15 @@ async def cb_download_srt(
         if m.provider == "openrouter":
             await animator.update(
                 animator.percent,
-                "جمنای در دسترس نبود، با مدل پشتیبان (OpenRouter) ادامه می‌دم...",
+                t("sub_openrouter_switch"),
             )
 
     async def _on_queue(pos: int) -> None:
-        await animator.update(10, f"تو صف هستی، نفر {pos} ام")
+        await animator.update(10, t("queue_position", pos=pos))
 
-    async def _on_shutdown(msg_fa: str) -> None:
+    async def _on_shutdown(msg_text: str) -> None:
         with contextlib.suppress(Exception):
-            await status_msg.edit_text(f"⚠️ <b>{html.escape(msg_fa)}</b>")
+            await status_msg.edit_text(f"⚠️ <b>{html.escape(msg_text)}</b>")
 
     try:
         async with job_manager.run_heavy_job(
@@ -973,20 +976,20 @@ async def cb_download_srt(
                 preview_block = subtitle_service.get_preview_lines(segments, count=3)
 
                 caption_lines = [
-                    f"✅ <b>فایل {mode_title} آماده شد!</b>\n",
-                    f"🎬 <b>عنوان:</b> {html.escape(meta.title)}",
-                    f"👤 <b>کانال:</b> <code>{html.escape(meta.channel)}</code>",
-                    f"📊 <b>تعداد خطوط زیرنویس:</b> <code>{len(segments)} خط</code>\n",
-                    f"👁‍🗨 <b>پیش‌نمایش ۳ دیالوگ اول:</b>",
-                    f"<blockquote>{preview_block}</blockquote>",
+                    t(
+                        "srt_ready_caption",
+                        mode_title=html.escape(mode_title),
+                        title=html.escape(meta.title),
+                        channel=html.escape(meta.channel),
+                        count=len(segments),
+                        preview=preview_block,
+                    )
                 ]
                 if subtitle_service.is_approximate(callback_data.video_id):
-                    caption_lines.append(f"\n{APPROXIMATE_TIMING_LINE_FA}")
+                    caption_lines.append(f"\n{t('approximate_timing_notice')}")
                 if scope.openrouter_used and scope.openrouter_model:
                     caption_lines.append(
-                        OPENROUTER_FOOTER_TEMPLATE.format(
-                            model=html.escape(scope.openrouter_model)
-                        )
+                        t("openrouter_footer", model=html.escape(scope.openrouter_model))
                     )
 
                 await animator.stop_heartbeat()
@@ -1019,9 +1022,7 @@ async def cb_download_srt(
         await analytics.log_event(
             user_id, "action_failed", action=action_name, error_type="TimeoutError"
         )
-        await status_msg.edit_text(
-            "⏱ <b>زمان ترجمه زیرنویس بیش از حد مجاز (۹۰ ثانیه) طول کشید. چند دقیقه دیگه دوباره امتحان کن.</b>"
-        )
+        await status_msg.edit_text(t("err_srt_timeout"))
     except Exception as exc:
         await animator.stop_heartbeat()
         logger.exception("Error in action '%s': %s", action_name, exc)
@@ -1031,9 +1032,7 @@ async def cb_download_srt(
             action=action_name,
             error_type=exc.__class__.__name__,
         )
-        await status_msg.edit_text(
-            "❌ <b>هیچ‌کدوم از مدل‌ها جواب ندادن، چند دقیقه دیگه دوباره امتحان کن.</b>"
-        )
+        await status_msg.edit_text(t("err_all_models_failed"))
 
 
 @router.callback_query(VideoActionCallback.filter(F.action == "mux_cc"))
@@ -1046,26 +1045,23 @@ async def cb_download_softsub_video(
     job_manager: JobManager,
 ) -> None:
     user_id = callback.from_user.id if callback.from_user else None
-    await callback.answer("🎬 فرآیند ساخت ویدیوی سافت‌ساب شروع شد...")
+    await callback.answer(t("cb_starting_softsub"))
     if not callback.message:
         return
 
     meta = await subtitle_service.get_video_metadata(callback_data.video_id)
 
-    # Pre-work duration check before queuing
     try:
         job_manager.check_softsub_duration(meta.duration_seconds, user_id=user_id)
     except JobRejectedError as exc:
         await callback.message.reply(f"⚠️ <b>{html.escape(exc.user_message_fa)}</b>")
         return
 
-    status_msg = await callback.message.reply(
-        "⏳ <b>در حال آماده‌سازی ویدیوی سافت‌ساب...</b>"
-    )
+    status_msg = await callback.message.reply(t("msg_preparing_softsub"))
     animator = ActionStatusAnimator(
         status_msg=status_msg,
         title=meta.title,
-        pipeline_header="ترجمه زیرنویس -> دریافت ویدیو -> الصاق سافت‌ساب",
+        pipeline_header=t("pipe_softsub"),
     )
     animator.start_heartbeat()
     t0 = time.monotonic()
@@ -1074,15 +1070,15 @@ async def cb_download_softsub_video(
         if m.provider == "openrouter":
             await animator.update(
                 animator.percent,
-                "جمنای در دسترس نبود، با مدل پشتیبان (OpenRouter) ادامه می‌دم...",
+                t("sub_openrouter_switch"),
             )
 
     async def _on_queue(pos: int) -> None:
-        await animator.update(5, f"تو صف هستی، نفر {pos} ام")
+        await animator.update(5, t("queue_position", pos=pos))
 
-    async def _on_shutdown(msg_fa: str) -> None:
+    async def _on_shutdown(msg_text: str) -> None:
         with contextlib.suppress(Exception):
-            await status_msg.edit_text(f"⚠️ <b>{html.escape(msg_fa)}</b>")
+            await status_msg.edit_text(f"⚠️ <b>{html.escape(msg_text)}</b>")
 
     try:
         async with job_manager.run_heavy_job(
@@ -1108,7 +1104,7 @@ async def cb_download_softsub_video(
 
                     size_mb = round(mux_result.file_size_bytes / (1024 * 1024), 2)
                     await animator.update(
-                        99, f"در حال آپلود ویدیوی سافت‌ساب در تلگرام ({size_mb:.1f} MB)..."
+                        99, t("softsub_uploading", size_mb=size_mb)
                     )
 
                     video_file = FSInputFile(
@@ -1124,19 +1120,18 @@ async def cb_download_softsub_video(
                     )
 
                     caption_lines = [
-                        f"🎬 <b>{html.escape(mux_result.title)}</b>",
-                        f"👤 <b>کانال:</b> <code>{html.escape(mux_result.channel)}</code>",
-                        f"📦 <b>حجم فایل:</b> <code>{size_mb:.1f} MB</code>\n",
-                        "✨ <b>ویژگی سافت‌ساب (CC):</b>",
-                        "زیرنویس فارسی و انگلیسی داخل ویدیو قرار گرفته؛ توی پلیر تلگرام روی دکمه <b>CC</b> بزن تا فعال بشه.",
+                        t(
+                            "softsub_ready_caption",
+                            title=html.escape(mux_result.title),
+                            channel=html.escape(mux_result.channel),
+                            size_mb=size_mb,
+                        )
                     ]
                     if mux_result.approximate_timing:
-                        caption_lines.append(f"\n{APPROXIMATE_TIMING_LINE_FA}")
+                        caption_lines.append(f"\n{t('approximate_timing_notice')}")
                     if scope.openrouter_used and scope.openrouter_model:
                         caption_lines.append(
-                            OPENROUTER_FOOTER_TEMPLATE.format(
-                                model=html.escape(scope.openrouter_model)
-                            )
+                            t("openrouter_footer", model=html.escape(scope.openrouter_model))
                         )
 
                     await animator.stop_heartbeat()
@@ -1182,9 +1177,7 @@ async def cb_download_softsub_video(
         await analytics.log_event(
             user_id, "action_failed", action="mux_cc", error_type="TimeoutError"
         )
-        await status_msg.edit_text(
-            "⏱ <b>ساخت ویدیوی سافت‌ساب بیش از حد مجاز (۱۸۰ ثانیه) طول کشید. می‌تونی از دکمه‌ی دانلود زیرنویس (.SRT) استفاده کنی.</b>"
-        )
+        await status_msg.edit_text(t("err_softsub_timeout"))
     except TelegramBadRequest as exc:
         await animator.stop_heartbeat()
         logger.error("Telegram upload error for softsub video: %s", exc)
@@ -1194,9 +1187,7 @@ async def cb_download_softsub_video(
             action="mux_cc",
             error_type=exc.__class__.__name__,
         )
-        await status_msg.edit_text(
-            "⚠️ <b>حجم ویدیو بیشتر از سقف ۵۰ مگابایت تلگرامه. می‌تونی فایل زیرنویس فارسی (.SRT) رو از دکمه‌ی بالا دانلود کنی.</b>"
-        )
+        await status_msg.edit_text(t("err_softsub_too_large_tg"))
     except Exception as exc:
         await animator.stop_heartbeat()
         logger.exception("Error in action 'mux_cc': %s", exc)
@@ -1206,9 +1197,7 @@ async def cb_download_softsub_video(
             action="mux_cc",
             error_type=exc.__class__.__name__,
         )
-        await status_msg.edit_text(
-            "❌ <b>ساخت ویدیوی سافت‌ساب با خطا مواجه شد، چند دقیقه دیگه دوباره امتحان کن.</b>"
-        )
+        await status_msg.edit_text(t("err_softsub_generic"))
 
 
 @router.callback_query(VideoActionCallback.filter(F.action == "summary"))
@@ -1221,18 +1210,16 @@ async def cb_smart_summary(
     job_manager: JobManager,
 ) -> None:
     user_id = callback.from_user.id if callback.from_user else None
-    await callback.answer("📝 در حال تحلیل ویدیو و استخراج نکات کلیدی...")
+    await callback.answer(t("cb_starting_summary"))
     if not callback.message:
         return
 
     meta = await subtitle_service.get_video_metadata(callback_data.video_id)
-    status_msg = await callback.message.reply(
-        "⏳ <b>در حال تحلیل هوشمند محتوای ویدیو...</b>"
-    )
+    status_msg = await callback.message.reply(t("msg_preparing_summary"))
     animator = ActionStatusAnimator(
         status_msg=status_msg,
         title=meta.title,
-        pipeline_header="استخراج متن -> تحلیل محتوا -> تدوین فصل‌ها",
+        pipeline_header=t("pipe_summary"),
     )
     animator.start_heartbeat()
     t0 = time.monotonic()
@@ -1241,15 +1228,15 @@ async def cb_smart_summary(
         if m.provider == "openrouter":
             await animator.update(
                 animator.percent,
-                "جمنای در دسترس نبود، با مدل پشتیبان (OpenRouter) ادامه می‌دم...",
+                t("sub_openrouter_switch"),
             )
 
     async def _on_queue(pos: int) -> None:
-        await animator.update(10, f"تو صف هستی، نفر {pos} ام")
+        await animator.update(10, t("queue_position", pos=pos))
 
-    async def _on_shutdown(msg_fa: str) -> None:
+    async def _on_shutdown(msg_text: str) -> None:
         with contextlib.suppress(Exception):
-            await status_msg.edit_text(f"⚠️ <b>{html.escape(msg_fa)}</b>")
+            await status_msg.edit_text(f"⚠️ <b>{html.escape(msg_text)}</b>")
 
     try:
         async with job_manager.run_heavy_job(
@@ -1271,25 +1258,25 @@ async def cb_smart_summary(
                 )
 
                 lines: list[str] = [
-                    "📝 <b>خلاصه هوشمند و نکات کلیدی ویدیو</b>",
-                    f"🎬 <b>{html.escape(meta.title)}</b>",
-                    f"👤 کانال: <code>{html.escape(meta.channel)}</code>",
-                    "━━━━━━━━━━━━━━━━━━\n",
-                    f"🎯 <b>تیتر کلیدی:</b>\n<b>{html.escape(summary.headline_fa)}</b>\n",
-                    f"💡 <b>خلاصه مدیریتی:</b>\n<blockquote>{html.escape(summary.tldr_fa)}</blockquote>\n",
-                    "🔑 <b>مهم‌ترین نکات ویدیو:</b>",
+                    t(
+                        "summary_header",
+                        title=html.escape(meta.title),
+                        channel=html.escape(meta.channel),
+                        headline=html.escape(summary.headline_fa),
+                        tldr=html.escape(summary.tldr_fa),
+                    )
                 ]
 
                 for idx, point in enumerate(summary.key_takeaways_fa, start=1):
                     lines.append(f"  {idx}. {html.escape(point)}")
 
                 if summary.technical_terms:
-                    lines.append("\n🧪 <b>اصطلاحات و مدل‌های تخصصی:</b>")
+                    lines.append(t("summary_tech_terms_header"))
                     for term in summary.technical_terms[:6]:
                         lines.append(f"  • <code>{html.escape(term)}</code>")
 
                 if summary.chapters:
-                    lines.append("\n⏱ <b>فصل‌بندی زمانی ویدیو:</b>")
+                    lines.append(t("summary_chapters_header"))
                     for ch in summary.chapters[:8]:
                         mins, secs = divmod(max(0, ch.timestamp_seconds), 60)
                         time_label = f"{mins:02d}:{secs:02d}"
@@ -1301,9 +1288,7 @@ async def cb_smart_summary(
 
                 if scope.openrouter_used and scope.openrouter_model:
                     lines.append(
-                        OPENROUTER_FOOTER_TEMPLATE.format(
-                            model=html.escape(scope.openrouter_model)
-                        )
+                        t("openrouter_footer", model=html.escape(scope.openrouter_model))
                     )
 
                 await animator.stop_heartbeat()
@@ -1337,9 +1322,7 @@ async def cb_smart_summary(
         await analytics.log_event(
             user_id, "action_failed", action="summary", error_type="TimeoutError"
         )
-        await status_msg.edit_text(
-            "⏱ <b>تولید خلاصه بیش از حد مجاز (۹۰ ثانیه) طول کشید. چند دقیقه دیگه دوباره امتحان کن.</b>"
-        )
+        await status_msg.edit_text(t("err_summary_timeout"))
     except Exception as exc:
         await animator.stop_heartbeat()
         logger.exception("Error in action 'summary': %s", exc)
@@ -1349,9 +1332,7 @@ async def cb_smart_summary(
             action="summary",
             error_type=exc.__class__.__name__,
         )
-        await status_msg.edit_text(
-            "❌ <b>هیچ‌کدوم از مدل‌ها جواب ندادن، چند دقیقه دیگه دوباره امتحان کن.</b>"
-        )
+        await status_msg.edit_text(t("err_all_models_failed"))
 
 
 @router.callback_query(VideoActionCallback.filter(F.action == "web_play"))
@@ -1364,18 +1345,16 @@ async def cb_interactive_web_player(
     job_manager: JobManager,
 ) -> None:
     user_id = callback.from_user.id if callback.from_user else None
-    await callback.answer("🌐 در حال ساخت پلیر وب تعاملی با زیرنویس فارسی...")
+    await callback.answer(t("cb_starting_web_player"))
     if not callback.message:
         return
 
     meta = await subtitle_service.get_video_metadata(callback_data.video_id)
-    status_msg = await callback.message.reply(
-        "⏳ <b>در حال ساخت پلیر وب تعاملی...</b>"
-    )
+    status_msg = await callback.message.reply(t("msg_preparing_web_player"))
     animator = ActionStatusAnimator(
         status_msg=status_msg,
         title=meta.title,
-        pipeline_header="آماده‌سازی زیرنویس فارسی -> ساخت پلیر HTML5",
+        pipeline_header=t("pipe_web_player"),
     )
     animator.start_heartbeat()
     t0 = time.monotonic()
@@ -1384,15 +1363,15 @@ async def cb_interactive_web_player(
         if m.provider == "openrouter":
             await animator.update(
                 animator.percent,
-                "جمنای در دسترس نبود، با مدل پشتیبان (OpenRouter) ادامه می‌دم...",
+                t("sub_openrouter_switch"),
             )
 
     async def _on_queue(pos: int) -> None:
-        await animator.update(10, f"تو صف هستی، نفر {pos} ام")
+        await animator.update(10, t("queue_position", pos=pos))
 
-    async def _on_shutdown(msg_fa: str) -> None:
+    async def _on_shutdown(msg_text: str) -> None:
         with contextlib.suppress(Exception):
-            await status_msg.edit_text(f"⚠️ <b>{html.escape(msg_fa)}</b>")
+            await status_msg.edit_text(f"⚠️ <b>{html.escape(msg_text)}</b>")
 
     try:
         async with job_manager.run_heavy_job(
@@ -1432,7 +1411,7 @@ async def cb_interactive_web_player(
                     inline_keyboard=[
                         [
                             InlineKeyboardButton(
-                                text="▶️ باز کردن مستقیم در یوتیوب (CC فعال)",
+                                text=t("btn_open_yt_cc"),
                                 url=yt_cc_url,
                             )
                         ]
@@ -1440,18 +1419,13 @@ async def cb_interactive_web_player(
                 )
 
                 caption_lines = [
-                    "🌐 <b>پلیر وب تعاملی دوزبانه آماده شد!</b>\n",
-                    f"🎬 <b>{html.escape(meta.title)}</b>\n",
-                    "✨ <b>نحوه استفاده:</b>",
-                    "فایل <code>.html</code> بالا رو توی مرورگر گوشی یا کامپیوتر باز کن تا ویدیو با زیرنویس زنده فارسی و لیست دیالوگ‌های قابل کلیک پخش بشه.",
+                    t("web_player_ready_caption", title=html.escape(meta.title))
                 ]
                 if subtitle_service.is_approximate(callback_data.video_id):
-                    caption_lines.append(f"\n{APPROXIMATE_TIMING_LINE_FA}")
+                    caption_lines.append(f"\n{t('approximate_timing_notice')}")
                 if scope.openrouter_used and scope.openrouter_model:
                     caption_lines.append(
-                        OPENROUTER_FOOTER_TEMPLATE.format(
-                            model=html.escape(scope.openrouter_model)
-                        )
+                        t("openrouter_footer", model=html.escape(scope.openrouter_model))
                     )
 
                 await animator.stop_heartbeat()
@@ -1485,9 +1459,7 @@ async def cb_interactive_web_player(
         await analytics.log_event(
             user_id, "action_failed", action="web_play", error_type="TimeoutError"
         )
-        await status_msg.edit_text(
-            "⏱ <b>ساخت پلیر وب بیش از حد مجاز (۹۰ ثانیه) طول کشید. چند دقیقه دیگه دوباره امتحان کن.</b>"
-        )
+        await status_msg.edit_text(t("err_web_player_timeout"))
     except Exception as exc:
         await animator.stop_heartbeat()
         logger.exception("Error in action 'web_play': %s", exc)
@@ -1497,6 +1469,4 @@ async def cb_interactive_web_player(
             action="web_play",
             error_type=exc.__class__.__name__,
         )
-        await status_msg.edit_text(
-            "❌ <b>هیچ‌کدوم از مدل‌ها جواب ندادن، چند دقیقه دیگه دوباره امتحان کن.</b>"
-        )
+        await status_msg.edit_text(t("err_all_models_failed"))

@@ -54,6 +54,7 @@ class Analytics:
         self.supadata_monthly_limit = supadata_monthly_limit
         self._initialized = False
         self._init_lock = asyncio.Lock()
+        self._user_lang_cache: dict[str, str] = {}
 
     def hash_user(self, user_id: int | None) -> str:
         """Compute a 16-hex-character HMAC-SHA256 hash for a numeric user ID."""
@@ -109,7 +110,67 @@ class Analytics:
                 );
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_prefs (
+                    user_hash TEXT PRIMARY KEY,
+                    lang TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                """
+            )
             conn.commit()
+
+    def _get_user_lang_sync(self, user_hash: str) -> str | None:
+        with sqlite3.connect(self.db_path, timeout=5.0) as conn:
+            row = conn.execute(
+                "SELECT lang FROM user_prefs WHERE user_hash = ?",
+                (user_hash,),
+            ).fetchone()
+            return str(row[0]) if row and row[0] in ("fa", "en") else None
+
+    def _set_user_lang_sync(self, user_hash: str, lang: str, ts: str) -> None:
+        with sqlite3.connect(self.db_path, timeout=5.0) as conn:
+            conn.execute(
+                """
+                INSERT INTO user_prefs (user_hash, lang, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_hash) DO UPDATE SET
+                    lang = excluded.lang,
+                    updated_at = excluded.updated_at;
+                """,
+                (user_hash, lang, ts),
+            )
+            conn.commit()
+
+    async def get_user_lang(self, user_id: int | None) -> str | None:
+        """Return the user's explicitly saved language ('fa' or 'en'), or None if not set."""
+        if not user_id:
+            return None
+        user_hash = self.hash_user(user_id)
+        if user_hash in self._user_lang_cache:
+            return self._user_lang_cache[user_hash]
+        try:
+            await self.ensure_initialized()
+            lang = await asyncio.to_thread(self._get_user_lang_sync, user_hash)
+            if lang in ("fa", "en"):
+                self._user_lang_cache[user_hash] = lang
+            return lang
+        except Exception as exc:
+            logger.warning("Failed to read user language preference: %s", exc)
+            return None
+
+    async def set_user_lang(self, user_id: int, lang: str) -> None:
+        """Persist the user's explicit language choice ('fa' or 'en') keyed by HMAC user_hash."""
+        normalized = "en" if lang == "en" else "fa"
+        user_hash = self.hash_user(user_id)
+        self._user_lang_cache[user_hash] = normalized
+        try:
+            await self.ensure_initialized()
+            ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            await asyncio.to_thread(self._set_user_lang_sync, user_hash, normalized, ts)
+        except Exception as exc:
+            logger.warning("Failed to save user language preference: %s", exc)
 
     async def ensure_initialized(self) -> None:
         """Initialize the SQLite database and WAL mode if not already done."""

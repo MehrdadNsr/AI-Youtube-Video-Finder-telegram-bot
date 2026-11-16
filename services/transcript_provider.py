@@ -21,6 +21,7 @@ except ImportError:
 from config import Settings
 from middlewares.analytics_middleware import current_user_id_var
 from services.analytics import Analytics
+from services.i18n import t
 from services.job_manager import JobManager
 from services.llm_router import LLMRouter
 from services.ytdlp_options import build_opts
@@ -32,21 +33,20 @@ TranscriptSource = Literal["proxy", "direct", "supadata", "gemini_url"]
 
 
 class TranscriptFetchError(RuntimeError):
-    """Exception carrying an honest Persian user-facing message based on error_kind."""
+    """Exception carrying a localized, honest user-facing message based on error_kind."""
 
-    MESSAGES_FA: dict[str, str] = {
-        "blocked": "یوتیوب دسترسی سرور رو بلاک کرده و روش جایگزین هم جواب نداد، چند دقیقه دیگه دوباره امتحان کن",
-        "no_captions": "این ویدئو زیرنویس نداره و نتونستم از روی صدا هم متنش رو دربیارم",
-        "quota_exceeded": "سهمیه‌ی روزانه‌ی رونویسی تموم شده، فردا دوباره امتحان کن",
-        "queue_timeout": "الان سرور شلوغه، چند دقیقه دیگه امتحان کن",
-        "error": "خطایی توی دریافت زیرنویس پیش اومد و روش جایگزین هم جواب نداد، چند دقیقه دیگه دوباره امتحان کن",
+    KEY_BY_KIND: dict[str, str] = {
+        "blocked": "transcript_err_blocked",
+        "no_captions": "transcript_err_no_captions",
+        "quota_exceeded": "transcript_err_quota_exceeded",
+        "queue_timeout": "transcript_err_queue_timeout",
+        "error": "transcript_err_error",
     }
 
     def __init__(self, error_kind: str, custom_message: str | None = None) -> None:
         self.error_kind = error_kind
-        self.user_message_fa = custom_message or self.MESSAGES_FA.get(
-            error_kind, self.MESSAGES_FA["error"]
-        )
+        msg_key = self.KEY_BY_KIND.get(error_kind, "transcript_err_error")
+        self.user_message_fa = custom_message or t(msg_key)
         super().__init__(self.user_message_fa)
 
 
@@ -715,7 +715,7 @@ class TranscriptProvider:
             res = self._positive_cache[video_id]
             self._positive_cache.move_to_end(video_id)
             if progress_cb:
-                await progress_cb(20, "زیرنویس از کش بارگذاری شد...")
+                await progress_cb(20, t("tp_cached"))
             return res
 
         neg = self._negative_cache.get(video_id)
@@ -740,7 +740,7 @@ class TranscriptProvider:
         # Tier (1): Proxy
         if self.has_proxy and not self._is_proxy_circuit_open():
             if progress_cb:
-                await progress_cb(10, "دریافت زیرنویس از طریق پروکسی...")
+                await progress_cb(10, t("tp_fetching_proxy"))
             res = await self._try_yt_tier(video_id, use_proxy=True)
             if res.segments:
                 return res
@@ -749,7 +749,7 @@ class TranscriptProvider:
         # Tier (2): Direct
         if not self._is_direct_circuit_open():
             if progress_cb:
-                await progress_cb(12, "تلاش مستقیم برای دریافت زیرنویس یوتیوب...")
+                await progress_cb(12, t("tp_fetching_direct"))
             res = await self._try_yt_tier(video_id, use_proxy=False)
             if res.segments:
                 return res
@@ -765,7 +765,7 @@ class TranscriptProvider:
             if progress_cb:
                 await progress_cb(
                     14,
-                    "استفاده از سرویس پشتیبان زیرنویس (Supadata)...",
+                    t("tp_fetching_supadata"),
                 )
             self._spawn_analytics(
                 "transcript_fallback_used",
@@ -794,12 +794,12 @@ class TranscriptProvider:
             if honest_error_kind == "blocked":
                 await progress_cb(
                     15,
-                    "یوتیوب IP سرور رو بلاک کرده؛ دارم از روش جایگزین استفاده می‌کنم...",
+                    t("tp_fallback_blocked"),
                 )
             else:
                 await progress_cb(
                     15,
-                    "زیرنویس آماده پیدا نشد؛ دارم از روش جایگزین (رونویسی با جمنای) استفاده می‌کنم...",
+                    t("tp_fallback_no_captions"),
                 )
 
         self._spawn_analytics(
@@ -810,7 +810,7 @@ class TranscriptProvider:
 
         async def _on_queue_pos(pos: int) -> None:
             if progress_cb:
-                await progress_cb(15, f"تو صف هستی، نفر {pos} ام")
+                await progress_cb(15, t("queue_position", pos=pos))
 
         if self.job_manager is not None:
             try:
@@ -943,7 +943,7 @@ class TranscriptProvider:
                     pct = 16 + int(((win_idx - 1) / max(1, total_windows)) * 60)
                     await progress_cb(
                         pct,
-                        f"رونویسی بخش {win_idx} از {total_windows} با جمنای...",
+                        t("tp_transcribing_window", current=win_idx, total=total_windows),
                     )
 
                 prompt = (
@@ -982,7 +982,7 @@ class TranscriptProvider:
                         pct = 16 + int((completed_windows / max(1, total_windows)) * 65)
                         await progress_cb(
                             pct,
-                            f"رونویسی بخش {completed_windows} از {total_windows} با جمنای...",
+                            t("tp_transcribing_window", current=completed_windows, total=total_windows),
                         )
 
         try:

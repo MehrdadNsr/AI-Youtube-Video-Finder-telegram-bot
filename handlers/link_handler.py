@@ -11,11 +11,10 @@ from aiogram.types import CallbackQuery, LinkPreviewOptions
 from config import settings
 from handlers.video_handler import (
     ActionStatusAnimator,
-    APPROXIMATE_TIMING_LINE_FA,
-    OPENROUTER_FOOTER_TEMPLATE,
     VideoActionCallback,
 )
 from services.analytics import Analytics
+from services.i18n import t
 from services.job_manager import JobManager, JobRejectedError
 from services.link_server import LinkServer
 from services.llm_router import LLMCallMeta, LLMRouter
@@ -26,30 +25,21 @@ from services.transcript_provider import TranscriptFetchError
 logger = logging.getLogger(__name__)
 link_router = Router(name="direct_streaming_link_router")
 
-ACTION_LABELS_FA: dict[str, tuple[str, str]] = {
-    "link_sub": (
-        "لینک مستقیم ویدیو با سافت‌ساب فارسی",
-        "ترجمه زیرنویس -> دانلود ویدیو -> الصاق سافت‌ساب -> ساخت لینک",
-    ),
-    "link_orig": (
-        "لینک مستقیم ویدیوی اصلی (بدون زیرنویس)",
-        "دریافت استریم 720p از یوتیوب -> آماده‌سازی لینک مستقیم",
-    ),
-    "link_audio": (
-        "لینک مستقیم فایل صوتی (M4A)",
-        "دریافت صدای باکیفیت از یوتیوب -> آماده‌سازی لینک مستقیم",
-    ),
+ACTION_KEY_PAIRS: dict[str, tuple[str, str]] = {
+    "link_sub": ("link_label_sub", "link_pipe_sub"),
+    "link_orig": ("link_label_orig", "link_pipe_orig"),
+    "link_audio": ("link_label_audio", "link_pipe_audio"),
 }
 
 
-def _format_ttl_persian(ttl_sec: int) -> str:
+def _format_ttl_localized(ttl_sec: int) -> str:
     hours, rem = divmod(max(60, int(ttl_sec)), 3600)
     mins = rem // 60
     if hours > 0 and mins > 0:
-        return f"{hours} ساعت و {mins} دقیقه"
+        return t("ttl_hours_mins", hours=hours, mins=mins)
     if hours > 0:
-        return f"{hours} ساعت"
-    return f"{mins} دقیقه"
+        return t("ttl_hours_only", hours=hours)
+    return t("ttl_mins_only", mins=mins)
 
 
 @link_router.callback_query(
@@ -71,17 +61,19 @@ async def cb_generate_direct_link(
     action_name = callback_data.action
     if not settings.LINK_PUBLIC_BASE_URL or not link_server.is_enabled:
         await callback.answer(
-            "قابلیت لینک مستقیم روی این سرور تنظیم نشده است.",
+            t("link_not_configured_alert"),
             show_alert=True,
         )
         return
 
     user_id = callback.from_user.id if callback.from_user else None
-    label_fa, pipeline_desc = ACTION_LABELS_FA.get(
-        action_name, ACTION_LABELS_FA["link_orig"]
+    label_key, pipe_key = ACTION_KEY_PAIRS.get(
+        action_name, ACTION_KEY_PAIRS["link_orig"]
     )
+    label_text = t(label_key)
+    pipeline_desc = t(pipe_key)
 
-    await callback.answer(f"⏳ در حال ساخت {label_fa}...")
+    await callback.answer(t("cb_preparing_item", item=label_text))
     if not callback.message:
         return
 
@@ -96,7 +88,7 @@ async def cb_generate_direct_link(
         return
 
     status_msg = await callback.message.reply(
-        f"⏳ <b>در حال آماده‌سازی {label_fa}...</b>"
+        t("msg_preparing_item", item=html.escape(label_text))
     )
     animator = ActionStatusAnimator(
         status_msg=status_msg,
@@ -110,15 +102,15 @@ async def cb_generate_direct_link(
         if m.provider == "openrouter":
             await animator.update(
                 animator.percent,
-                "جمنای در دسترس نبود، با مدل پشتیبان (OpenRouter) ادامه می‌دم...",
+                t("sub_openrouter_switch"),
             )
 
     async def _on_queue(pos: int) -> None:
-        await animator.update(5, f"تو صف هستی، نفر {pos} ام")
+        await animator.update(5, t("queue_position", pos=pos))
 
-    async def _on_shutdown(msg_fa: str) -> None:
+    async def _on_shutdown(msg_text: str) -> None:
         with contextlib.suppress(Exception):
-            await status_msg.edit_text(f"⚠️ <b>{html.escape(msg_fa)}</b>")
+            await status_msg.edit_text(f"⚠️ <b>{html.escape(msg_text)}</b>")
 
     hard_timeout = (
         float(settings.LINK_TRANSLATION_TIMEOUT_SEC) + 180.0
@@ -158,28 +150,25 @@ async def cb_generate_direct_link(
 
                 await animator.stop_heartbeat()
                 size_mb = round(result.size_bytes / (1024 * 1024), 1)
-                ttl_fa = _format_ttl_persian(result.ttl_sec)
+                ttl_str = _format_ttl_localized(result.ttl_sec)
 
                 lines: list[str] = [
-                    f"🔗 <b>{label_fa} آماده شد!</b>\n",
-                    f"🎬 <b>عنوان:</b> {html.escape(result.title)}",
-                    f"👤 <b>کانال:</b> <code>{html.escape(result.channel)}</code>",
-                    f"📦 <b>حجم فایل:</b> <code>{size_mb} MB</code>",
-                    f"⏳ <b>اعتبار لینک:</b> تا <code>{ttl_fa}</code> آینده\n",
-                    "📋 <b>لینک مستقیم (کپی کن):</b>",
-                    f"<code>{html.escape(result.url)}</code>\n",
-                    "📱 <b>نحوه تماشا / دانلود:</b>",
-                    "می‌تونی لینک بالا رو توی مرورگر بزنی تا دانلود بشه، یا توی برنامه <b>VLC</b> / <b>MX Player</b> قسمت <i>Open Network Stream</i> وارد کنی تا مستقیم و بدون دانلود کامل پخش بشه (پشتیبانی از جلو/عقب بردن و انتخاب زیرنویس فارسی/انگلیسی).\n",
-                    "⚠️ <i>توجه: هر کسی که این لینک رو داشته باشه تا قبل از منقضی شدن می‌تونه فایل رو دانلود کنه.</i>",
+                    t(
+                        "link_ready_message",
+                        label=html.escape(label_text),
+                        title=html.escape(result.title),
+                        channel=html.escape(result.channel),
+                        size_mb=size_mb,
+                        ttl=html.escape(ttl_str),
+                        url=html.escape(result.url),
+                    )
                 ]
 
                 if result.approximate_timing:
-                    lines.append(f"\n{APPROXIMATE_TIMING_LINE_FA}")
+                    lines.append(f"\n{t('approximate_timing_notice')}")
                 if scope.openrouter_used and scope.openrouter_model:
                     lines.append(
-                        OPENROUTER_FOOTER_TEMPLATE.format(
-                            model=html.escape(scope.openrouter_model)
-                        )
+                        t("openrouter_footer", model=html.escape(scope.openrouter_model))
                     )
 
                 await status_msg.edit_text(
@@ -216,9 +205,7 @@ async def cb_generate_direct_link(
         await analytics.log_event(
             user_id, "action_failed", action=action_name, error_type="TimeoutError"
         )
-        await status_msg.edit_text(
-            "⏱ <b>زمان آماده‌سازی لینک مستقیم بیش از حد مجاز طول کشید. چند دقیقه دیگه دوباره امتحان کن.</b>"
-        )
+        await status_msg.edit_text(t("err_link_timeout"))
     except Exception as exc:
         await animator.stop_heartbeat()
         logger.exception("Error in direct link action '%s': %s", action_name, exc)
@@ -228,6 +215,4 @@ async def cb_generate_direct_link(
             action=action_name,
             error_type=exc.__class__.__name__,
         )
-        await status_msg.edit_text(
-            "❌ <b>ساخت لینک مستقیم با خطا مواجه شد، چند دقیقه دیگه دوباره امتحان کن.</b>"
-        )
+        await status_msg.edit_text(t("err_link_generic"))

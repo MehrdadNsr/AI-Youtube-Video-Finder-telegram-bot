@@ -39,6 +39,11 @@ class Settings(BaseSettings):
         ...,
         description="Telegram numeric user ID of the bot owner for /stats access (required)",
     )
+    DEFAULT_LANG: str = Field(
+        default="fa",
+        pattern="^(fa|en)$",
+        description="Default UI language ('fa' or 'en')",
+    )
     ANALYTICS_DB_PATH: str = Field(
         default="data/analytics.db",
         description="File path for the SQLite usage analytics database",

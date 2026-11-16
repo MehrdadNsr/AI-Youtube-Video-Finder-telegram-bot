@@ -10,6 +10,8 @@ A Telegram bot that takes a short clip (for example a post forwarded from a Tele
 - A simple HTML5 web player
 - (Optional) direct streaming links for VLC / MX Player
 
+The bot interface is bilingual (Persian and English). The language is detected from the user's Telegram settings and can be changed with `/lang`. Subtitle and summary output is Persian for now.
+
 Built with Python 3.11+ and `aiogram 3.x`.
 
 ## ⚠️ Disclaimer
@@ -35,6 +37,7 @@ This code is published for **educational and personal use only**. The author doe
 - **`services/job_manager.py`**: FIFO concurrency queues, per-user rate limits, temp dir lifecycle, health watchdog and graceful shutdown.
 - **`services/link_server.py`, `services/media_links.py`, `handlers/link_handler.py`**: optional signed, expiring direct-link server with HTTP Range support.
 - **`services/analytics.py`, `middlewares/analytics_middleware.py`**: privacy-preserving SQLite (WAL) analytics with HMAC-SHA256 user hashes.
+- **`services/i18n.py`**: all user-facing text in Persian and English, the `t()` lookup and per-request language via a contextvar.
 - **`handlers/`**: Telegram commands, progress UI and inline buttons.
 
 A per-file description (in Persian) is in [FILES.md](FILES.md).
@@ -167,6 +170,7 @@ Files are built on your server and served by a small built-in HTTP server with R
 | Command | Who | What |
 |---|---|---|
 | `/start`, `/help` | everyone | welcome and usage |
+| `/lang` | everyone | switch the bot language (Persian / English) |
 | `/version` | everyone | bot version |
 | `/stats`, `/stats_export` | `ADMIN_ID` only | usage analytics |
 
