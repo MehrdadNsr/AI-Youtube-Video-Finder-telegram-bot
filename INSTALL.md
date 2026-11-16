@@ -4,7 +4,7 @@
 
 [English](INSTALL.en.md)
 
-> ⚠️ **توجه:** اسکریپت نصب (`setup.sh`) هنوز روی یه سرور واقعی تست نشده. اگه جایی خطا داد، لطفاً یه [Issue](https://github.com/MehrdadNsr/video-source-finder-bot/issues) باز کن و متن کامل خطا رو بذار تا درستش کنیم.
+> ⚠️ **توجه:** اسکریپت نصب (`setup.sh`) هنوز روی یه سرور واقعی تست نشده. اگه جایی خطا داد، لطفاً یه [Issue](https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot/issues) باز کن و متن کامل خطا رو بذار تا درستش کنیم.
 
 ## قبل از شروع این‌ها رو آماده کن
 
@@ -23,7 +23,7 @@
 روی سرور این رو بزن:
 
 ```bash
-git clone https://github.com/MehrdadNsr/video-source-finder-bot.git && cd video-source-finder-bot && bash setup.sh
+git clone https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot.git && cd AI-Youtube-Video-Finder-telegram-bot && bash setup.sh
 ```
 
 اسکریپت خودش این کارها رو می‌کنه:

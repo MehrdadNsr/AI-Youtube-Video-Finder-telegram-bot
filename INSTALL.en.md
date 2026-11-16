@@ -2,7 +2,7 @@
 
 [فارسی](INSTALL.md)
 
-> ⚠️ **Note:** the installer (`setup.sh`) has not been tested on a real server yet. If anything fails, please [open an issue](https://github.com/MehrdadNsr/video-source-finder-bot/issues) with the full error output and we will fix it.
+> ⚠️ **Note:** the installer (`setup.sh`) has not been tested on a real server yet. If anything fails, please [open an issue](https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot/issues) with the full error output and we will fix it.
 
 ## Have these ready
 
@@ -21,7 +21,7 @@
 On your server:
 
 ```bash
-git clone https://github.com/MehrdadNsr/video-source-finder-bot.git && cd video-source-finder-bot && bash setup.sh
+git clone https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot.git && cd AI-Youtube-Video-Finder-telegram-bot && bash setup.sh
 ```
 
 The script:

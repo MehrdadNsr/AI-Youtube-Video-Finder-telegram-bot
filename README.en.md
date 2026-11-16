@@ -1,4 +1,4 @@
-# Video Source Finder Bot
+# AI YouTube Video Finder Telegram Bot
 
 [فارسی](README.md)
 
@@ -60,10 +60,10 @@ A per-file description (in Persian) is in [FILES.md](FILES.md).
 On an Ubuntu or Debian server, run this. The script installs everything, asks for your keys and starts the bot:
 
 ```bash
-git clone https://github.com/MehrdadNsr/video-source-finder-bot.git && cd video-source-finder-bot && bash setup.sh
+git clone https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot.git && cd AI-Youtube-Video-Finder-telegram-bot && bash setup.sh
 ```
 
-Full guide: [INSTALL.en.md](INSTALL.en.md). The script has not been tested on a real server yet; if it fails, please [open an issue](https://github.com/MehrdadNsr/video-source-finder-bot/issues).
+Full guide: [INSTALL.en.md](INSTALL.en.md). The script has not been tested on a real server yet; if it fails, please [open an issue](https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot/issues).
 
 ## Manual setup
 
@@ -84,11 +84,11 @@ sudo ln -sf "$HOME/.deno/bin/deno" /usr/local/bin/deno
 ### 2. Get the code
 
 ```bash
-git clone https://github.com/MehrdadNsr/video-source-finder-bot.git
+git clone https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot.git
 ```
 
 ```bash
-cd video-source-finder-bot
+cd AI-Youtube-Video-Finder-telegram-bot
 ```
 
 ### 3. Virtual environment and dependencies
@@ -140,8 +140,8 @@ After=network-online.target
 
 [Service]
 User=YOUR_USER
-WorkingDirectory=/home/YOUR_USER/video-source-finder-bot
-ExecStart=/home/YOUR_USER/video-source-finder-bot/.venv/bin/python main.py
+WorkingDirectory=/home/YOUR_USER/AI-Youtube-Video-Finder-telegram-bot
+ExecStart=/home/YOUR_USER/AI-Youtube-Video-Finder-telegram-bot/.venv/bin/python main.py
 Restart=always
 RestartSec=5
 

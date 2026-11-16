@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Video Source Finder Bot - interactive installer for Ubuntu / Debian.
+# AI YouTube Video Finder Telegram Bot - interactive installer for Ubuntu / Debian.
 #
 # Usage (from the repository folder):
 #   bash setup.sh                 full install: system packages, Python env, .env, systemd service
@@ -82,7 +82,7 @@ random_hex() { python3 -c "import secrets; print(secrets.token_hex(32))"; }
 if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
 RUN_USER="$(id -un)"
 
-echo "${BOLD}Video Source Finder Bot - setup${RESET}"
+echo "${BOLD}AI YouTube Video Finder Telegram Bot - setup${RESET}"
 echo "Repository: $REPO_DIR"
 [ -f "$ENV_EXAMPLE" ] || die "Run this script from the bot's repository folder (.env.example not found)."
 
@@ -309,4 +309,4 @@ fi
 
 echo
 echo "${GREEN}${BOLD}Done.${RESET} Open your bot in Telegram${bot_username:+ (@$bot_username)} and send /start."
-echo "Problems? Open an issue: https://github.com/MehrdadNsr/video-source-finder-bot/issues"
+echo "Problems? Open an issue: https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot/issues"

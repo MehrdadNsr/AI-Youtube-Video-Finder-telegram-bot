@@ -1060,7 +1060,7 @@ class LLMRouter:
         headers = {
             "Authorization": f"Bearer {self._openrouter_api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/MehrdadNsr/video-source-finder-bot",
+            "HTTP-Referer": "https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot",
             "X-Title": "Video Source Finder Bot",
         }
 

@@ -1,6 +1,6 @@
 <div dir="rtl">
 
-# ربات پیدا کردن منبع ویدیو (Video Source Finder Bot)
+# ربات تلگرام پیدا کردن منبع ویدیو در یوتیوب با هوش مصنوعی (AI YouTube Video Finder)
 
 [English](README.en.md)
 
@@ -48,10 +48,10 @@
 روی یه سرور اوبونتو یا دبیان این رو بزن. اسکریپت همه‌چی رو نصب می‌کنه، کلیدها رو ازت می‌پرسه و ربات رو راه میندازه:
 
 ```bash
-git clone https://github.com/MehrdadNsr/video-source-finder-bot.git && cd video-source-finder-bot && bash setup.sh
+git clone https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot.git && cd AI-Youtube-Video-Finder-telegram-bot && bash setup.sh
 ```
 
-راهنمای کامل نصب: [INSTALL.md](INSTALL.md). اسکریپت هنوز روی سرور واقعی تست نشده؛ اگه خطا دیدی [Issue](https://github.com/MehrdadNsr/video-source-finder-bot/issues) باز کن.
+راهنمای کامل نصب: [INSTALL.md](INSTALL.md). اسکریپت هنوز روی سرور واقعی تست نشده؛ اگه خطا دیدی [Issue](https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot/issues) باز کن.
 
 ## راه‌اندازی دستی
 
@@ -72,11 +72,11 @@ sudo ln -sf "$HOME/.deno/bin/deno" /usr/local/bin/deno
 ### ۲. گرفتن کد
 
 ```bash
-git clone https://github.com/MehrdadNsr/video-source-finder-bot.git
+git clone https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot.git
 ```
 
 ```bash
-cd video-source-finder-bot
+cd AI-Youtube-Video-Finder-telegram-bot
 ```
 
 ### ۳. محیط مجازی و نصب کتابخونه‌ها
@@ -128,8 +128,8 @@ After=network-online.target
 
 [Service]
 User=YOUR_USER
-WorkingDirectory=/home/YOUR_USER/video-source-finder-bot
-ExecStart=/home/YOUR_USER/video-source-finder-bot/.venv/bin/python main.py
+WorkingDirectory=/home/YOUR_USER/AI-Youtube-Video-Finder-telegram-bot
+ExecStart=/home/YOUR_USER/AI-Youtube-Video-Finder-telegram-bot/.venv/bin/python main.py
 Restart=always
 RestartSec=5
 
