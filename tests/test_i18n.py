@@ -59,18 +59,16 @@ def test_t_formatting_and_fallbacks() -> None:
 
 def test_resolve_user_lang_priority() -> None:
     # 1. Explicit stored preference always wins
-    assert resolve_user_lang("en", stored_lang="fa") == "fa"
-    assert resolve_user_lang("fa", stored_lang="en") == "en"
+    assert resolve_user_lang(stored_lang="fa", default_lang="en") == "fa"
+    assert resolve_user_lang(stored_lang="en", default_lang="fa") == "en"
 
-    # 2. Telegram language_code ('fa*' -> 'fa', everything else -> 'en')
-    assert resolve_user_lang("fa", stored_lang=None) == "fa"
-    assert resolve_user_lang("fa-IR", stored_lang=None) == "fa"
-    assert resolve_user_lang("en", stored_lang=None) == "en"
-    assert resolve_user_lang("ru", stored_lang=None) == "en"
+    # 2. No choice yet -> DEFAULT_LANG
+    assert resolve_user_lang(stored_lang=None, default_lang="en") == "en"
+    assert resolve_user_lang(stored_lang=None, default_lang="fa") == "fa"
+    assert resolve_user_lang() == "en"
 
-    # 3. Fallback when both are None
-    assert resolve_user_lang(None, stored_lang=None, default_lang="fa") == "fa"
-    assert resolve_user_lang(None, stored_lang=None, default_lang="en") == "en"
+    # 3. Invalid values are ignored
+    assert resolve_user_lang(stored_lang="de", default_lang="xx") == "en"
 
 
 def test_no_unintended_persian_in_handlers_or_services() -> None:

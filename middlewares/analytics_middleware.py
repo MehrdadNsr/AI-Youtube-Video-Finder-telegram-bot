@@ -53,7 +53,6 @@ class AnalyticsMiddleware(BaseMiddleware):
         data["analytics"] = self.analytics
 
         user_id: int | None = None
-        tg_lang_code: str | None = None
         update_kind = "other"
         media_kind = "other"
 
@@ -72,7 +71,6 @@ class AnalyticsMiddleware(BaseMiddleware):
             update_kind = "message"
             if msg.from_user:
                 user_id = msg.from_user.id
-                tg_lang_code = msg.from_user.language_code
             if msg.video or (
                 msg.document
                 and msg.document.mime_type
@@ -87,12 +85,10 @@ class AnalyticsMiddleware(BaseMiddleware):
             update_kind = "callback_query"
             if cb.from_user:
                 user_id = cb.from_user.id
-                tg_lang_code = cb.from_user.language_code
             media_kind = "button"
 
         stored_lang = await self.analytics.get_user_lang(user_id)
         resolved_lang = resolve_user_lang(
-            telegram_lang_code=tg_lang_code,
             stored_lang=stored_lang,
             default_lang=settings.DEFAULT_LANG,
         )

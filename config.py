@@ -40,7 +40,7 @@ class Settings(BaseSettings):
         description="Telegram numeric user ID of the bot owner for /stats access (required)",
     )
     DEFAULT_LANG: str = Field(
-        default="fa",
+        default="en",
         pattern="^(fa|en)$",
         description="Default UI language ('fa' or 'en')",
     )

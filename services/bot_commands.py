@@ -1,13 +1,9 @@
 """
 Telegram Menu Button command lists.
 
-The menu (the "Menu" button next to the message box) is registered per language:
-- default list (no language_code) in English, shown to every non-Persian Telegram client
-- language_code="fa" list in Persian
-This mirrors resolve_user_lang(): 'fa*' -> fa, everything else -> en.
-
-When a user picks a language with /lang, their private chat gets its own list in that
-language (chat scope overrides the language-based default). The admin chat also lists
+The menu (the "Menu" button next to the message box) defaults to settings.DEFAULT_LANG
+for everyone. When a user picks a language on /start or with /lang, their private chat
+gets its own list in that language (chat scope overrides the default). The admin chat also lists
 /stats and /stats_export.
 """
 
@@ -41,10 +37,11 @@ def build_commands(lang: str, include_admin: bool = False) -> list[BotCommand]:
 async def setup_bot_commands(bot: Bot) -> None:
     """Register the Menu Button command lists at startup. Never raises."""
     try:
-        await bot.set_my_commands(build_commands("en"), scope=BotCommandScopeDefault())
         await bot.set_my_commands(
-            build_commands("fa"), scope=BotCommandScopeDefault(), language_code="fa"
+            build_commands(settings.DEFAULT_LANG), scope=BotCommandScopeDefault()
         )
+        # Clear the per-client-language list registered by older versions
+        await bot.delete_my_commands(scope=BotCommandScopeDefault(), language_code="fa")
         await bot.set_my_commands(
             build_commands(settings.DEFAULT_LANG, include_admin=True),
             scope=BotCommandScopeChat(chat_id=settings.ADMIN_ID),

@@ -25,23 +25,18 @@ def set_current_lang(lang: str) -> contextvars.Token[str]:
 
 
 def resolve_user_lang(
-    telegram_lang_code: str | None,
     stored_lang: str | None = None,
-    default_lang: str = "fa",
+    default_lang: str = "en",
 ) -> str:
     """
     Resolve language for a user:
-    1. Explicit choice stored in SQLite (`stored_lang` in {'fa', 'en'})
-    2. Telegram `from_user.language_code` ('fa*' -> 'fa', anything else -> 'en')
-    3. Fallback to `default_lang` ('fa')
+    1. Explicit choice stored in SQLite (`stored_lang` in {'fa', 'en'}), set via /start or /lang
+    2. Fallback to `default_lang` (settings.DEFAULT_LANG, English by default)
+    The Telegram client language is intentionally ignored: users pick their language on /start.
     """
     if stored_lang in ("fa", "en"):
         return stored_lang
-    if telegram_lang_code and telegram_lang_code.strip():
-        if telegram_lang_code.strip().lower().startswith("fa"):
-            return "fa"
-        return "en"
-    return default_lang if default_lang in ("fa", "en") else "fa"
+    return default_lang if default_lang in ("fa", "en") else "en"
 
 
 STRINGS: dict[str, dict[str, str]] = {

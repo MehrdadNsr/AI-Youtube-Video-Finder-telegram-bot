@@ -10,7 +10,7 @@ A Telegram bot that takes a short clip (for example a post forwarded from a Tele
 - A simple HTML5 web player
 - (Optional) direct streaming links for VLC / MX Player
 
-The bot interface is bilingual (Persian and English). The language is detected from the user's Telegram settings and can be changed with `/lang`. Subtitle and summary output is Persian for now.
+The bot interface is bilingual (Persian and English). Users pick their language on the first `/start` and can change it any time with `/lang`; until then the bot uses `DEFAULT_LANG` (English). Subtitle and summary output is Persian for now.
 
 Built with Python 3.11+ and `aiogram 3.x`.
 

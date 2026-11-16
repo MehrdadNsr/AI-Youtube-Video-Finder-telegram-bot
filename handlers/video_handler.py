@@ -47,6 +47,7 @@ class LangSelectCallback(CallbackData, prefix="lang"):
     """CallbackData for switching user interface language ('fa' or 'en')."""
 
     lang: str
+    src: str = "lang"  # "start" = first-run picker, send the welcome message after choosing
 
 
 # ─────────────────────────────────────────────────────────────
@@ -254,7 +255,15 @@ class ActionStatusAnimator:
 # ─────────────────────────────────────────────────────────────
 
 @router.message(CommandStart())
-async def cmd_start(message: Message) -> None:
+async def cmd_start(message: Message, analytics: Analytics) -> None:
+    """First run: ask for the language, then welcome. Returning users get the welcome directly."""
+    user_id = message.from_user.id if message.from_user else None
+    if await analytics.get_user_lang(user_id) is None:
+        await message.answer(
+            t("lang_choose_prompt"),
+            reply_markup=_build_lang_keyboard(src="start"),
+        )
+        return
     await message.answer(t("welcome_message"))
 
 
@@ -263,17 +272,17 @@ async def cmd_help(message: Message) -> None:
     await message.answer(t("help_message"))
 
 
-def _build_lang_keyboard() -> InlineKeyboardMarkup:
+def _build_lang_keyboard(src: str = "lang") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text=t("lang_btn_fa", lang="fa"),
-                    callback_data=LangSelectCallback(lang="fa").pack(),
+                    callback_data=LangSelectCallback(lang="fa", src=src).pack(),
                 ),
                 InlineKeyboardButton(
                     text=t("lang_btn_en", lang="en"),
-                    callback_data=LangSelectCallback(lang="en").pack(),
+                    callback_data=LangSelectCallback(lang="en", src=src).pack(),
                 ),
             ]
         ]
@@ -305,6 +314,8 @@ async def cb_select_lang(
     if callback.message:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(confirm_text)
+        if callback_data.src == "start":
+            await callback.message.answer(t("welcome_message", lang=chosen))
 
 
 # ─────────────────────────────────────────────────────────────
