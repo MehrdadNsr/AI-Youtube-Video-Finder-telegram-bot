@@ -55,7 +55,17 @@ A per-file description (in Persian) is in [FILES.md](FILES.md).
 | OpenRouter API key | [openrouter.ai](https://openrouter.ai) | no, fallback only |
 | Supadata API key | [supadata.ai](https://supadata.ai) | no, transcript fallback only |
 
-## Setup
+## Quick install (recommended)
+
+On an Ubuntu or Debian server, run this. The script installs everything, asks for your keys and starts the bot:
+
+```bash
+git clone https://github.com/MehrdadNsr/video-source-finder-bot.git && cd video-source-finder-bot && bash setup.sh
+```
+
+Full guide: [INSTALL.en.md](INSTALL.en.md). The script has not been tested on a real server yet; if it fails, please [open an issue](https://github.com/MehrdadNsr/video-source-finder-bot/issues).
+
+## Manual setup
 
 ### 1. System packages (Ubuntu / Debian)
 

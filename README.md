@@ -43,7 +43,17 @@
 | کلید OpenRouter | [openrouter.ai](https://openrouter.ai) | نه، فقط پشتیبان |
 | کلید Supadata | [supadata.ai](https://supadata.ai) | نه، فقط پشتیبان ترنسکریپت |
 
-## راه‌اندازی قدم‌به‌قدم
+## نصب سریع (پیشنهادی)
+
+روی یه سرور اوبونتو یا دبیان این رو بزن. اسکریپت همه‌چی رو نصب می‌کنه، کلیدها رو ازت می‌پرسه و ربات رو راه میندازه:
+
+```bash
+git clone https://github.com/MehrdadNsr/video-source-finder-bot.git && cd video-source-finder-bot && bash setup.sh
+```
+
+راهنمای کامل نصب: [INSTALL.md](INSTALL.md). اسکریپت هنوز روی سرور واقعی تست نشده؛ اگه خطا دیدی [Issue](https://github.com/MehrdadNsr/video-source-finder-bot/issues) باز کن.
+
+## راه‌اندازی دستی
 
 ### ۱. پیش‌نیازهای سیستم (اوبونتو یا دبیان)
 
