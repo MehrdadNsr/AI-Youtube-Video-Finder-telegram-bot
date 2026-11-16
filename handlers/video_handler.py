@@ -22,6 +22,7 @@ from aiogram.types import (
 from config import settings
 from services.analytics import Analytics
 from services.audio_verifier import AudioVerifier, AudioTranscriptionResult
+from services.bot_commands import set_chat_commands_lang
 from services.gemini_extractor import GeminiExtractor, CaptionAnalysisResult
 from services.i18n import set_current_lang, t
 from services.job_manager import JobManager, JobRejectedError
@@ -297,6 +298,8 @@ async def cb_select_lang(
     if callback.from_user:
         await analytics.set_user_lang(callback.from_user.id, chosen)
     set_current_lang(chosen)
+    if callback.message and callback.message.chat.type == "private" and callback.bot:
+        await set_chat_commands_lang(callback.bot, callback.message.chat.id, chosen)
     confirm_text = t("lang_switched_confirm", lang=chosen)
     await callback.answer(confirm_text, show_alert=False)
     if callback.message:

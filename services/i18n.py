@@ -101,6 +101,32 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "✅ Bot language has been set to <b>English</b>.",
     },
 
+    # ─── Telegram Menu Button command descriptions (max 256 chars, no HTML) ───
+    "cmd_desc_start": {
+        "fa": "شروع و معرفی ربات",
+        "en": "Start and bot introduction",
+    },
+    "cmd_desc_help": {
+        "fa": "راهنمای استفاده",
+        "en": "How to use the bot",
+    },
+    "cmd_desc_lang": {
+        "fa": "تغییر زبان / Change language",
+        "en": "Change language / تغییر زبان",
+    },
+    "cmd_desc_version": {
+        "fa": "نسخه و وضعیت سرور",
+        "en": "Bot version and server status",
+    },
+    "cmd_desc_stats": {
+        "fa": "آمار استفاده (فقط ادمین)",
+        "en": "Usage analytics (admin only)",
+    },
+    "cmd_desc_stats_export": {
+        "fa": "خروجی JSON آمار (فقط ادمین)",
+        "en": "Analytics JSON export (admin only)",
+    },
+
     # ─── Progress Tracker Steps & Sub-activities ───
     "progress_header": {
         "fa": "🔎 <b>در حال پیدا کردن منبع اصلی ویدیو...</b>",

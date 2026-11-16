@@ -13,6 +13,7 @@ from handlers.video_handler import router as video_router
 from middlewares.analytics_middleware import AnalyticsMiddleware
 from services.analytics import Analytics
 from services.audio_verifier import AudioVerifier
+from services.bot_commands import setup_bot_commands
 from services.gemini_extractor import GeminiExtractor
 from services.job_manager import JobManager
 from services.link_server import LinkServer
@@ -138,6 +139,7 @@ async def main() -> None:
     dp.include_router(video_router)
 
     await bot.delete_webhook(drop_pending_updates=True)
+    await setup_bot_commands(bot)
 
     try:
         logger.info("Bot is polling and ready...")
