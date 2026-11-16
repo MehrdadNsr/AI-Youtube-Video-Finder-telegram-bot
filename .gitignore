@@ -1,0 +1,21 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Analytics SQLite database & WAL files
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Python bytecode & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
