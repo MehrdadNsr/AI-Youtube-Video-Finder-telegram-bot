@@ -47,7 +47,10 @@ async def setup_bot_commands(bot: Bot) -> None:
             scope=BotCommandScopeChat(chat_id=settings.ADMIN_ID),
         )
         await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
-        logger.info("Telegram menu commands registered (fa/en + admin)")
+        logger.info(
+            "Telegram menu commands registered (default=%s, admin list for ADMIN_ID)",
+            settings.DEFAULT_LANG,
+        )
     except Exception as exc:
         logger.warning("Failed to register Telegram menu commands: %s", exc)
 

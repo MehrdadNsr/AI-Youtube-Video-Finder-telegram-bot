@@ -94,7 +94,7 @@ if [ "$CONFIG_ONLY" -eq 0 ]; then
     . /etc/os-release
     ok "Detected: ${PRETTY_NAME:-unknown}"
   fi
-  command -v apt-get >/dev/null 2>&1 || die "This installer supports Ubuntu / Debian (apt-get) only. See INSTALL.en.md for manual steps."
+  command -v apt-get >/dev/null 2>&1 || die "This installer supports Ubuntu / Debian (apt-get) only. See INSTALL.md for manual steps."
   if [ -n "$SUDO" ]; then
     command -v sudo >/dev/null 2>&1 || die "sudo is not installed. Run this script as root or install sudo."
   fi

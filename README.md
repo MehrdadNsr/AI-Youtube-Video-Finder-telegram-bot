@@ -1,61 +1,75 @@
-<div dir="rtl">
+# AI YouTube Video Finder Telegram Bot
 
-# ربات تلگرام پیدا کردن منبع ویدیو در یوتیوب با هوش مصنوعی (AI YouTube Video Finder)
+**English** | [فارسی](README.fa.md)
 
-[English](README.en.md)
+📦 **Install:** [INSTALL.md](INSTALL.md) (one command)
 
-یه ربات تلگرام که یه کلیپ کوتاه (مثلاً یه پست فورواردی از یه کانال) رو می‌گیره، **ویدیوی اصلیش رو توی یوتیوب پیدا می‌کنه** و **ثانیهٔ دقیق شروع کلیپ** رو می‌گه. بعدش با یه کلیک می‌تونی این‌ها رو بگیری:
+A Telegram bot that takes a short clip (for example a post forwarded from a Telegram channel), **finds the original YouTube video** and the **exact start timestamp** of the clip. Then, with one tap, you can get:
 
-- زیرنویس فارسی (`.srt`) یا دوزبانهٔ فارسی و انگلیسی
-- ویدیو با زیرنویس داخلی (softsub، بدون رندر دوباره)
-- خلاصهٔ زمان‌دار ویدیو
-- یه پخش‌کنندهٔ وب ساده
-- (اختیاری) لینک مستقیم استریم برای VLC یا MX Player
+- Persian `.srt` subtitles, or bilingual Persian + English
+- The video with embedded soft subtitles (`mov_text`, no re-encoding)
+- A timestamped summary
+- A simple HTML5 web player
+- (Optional) direct streaming links for VLC / MX Player
 
-منو و پیام‌های ربات دوزبانه‌ان (فارسی و انگلیسی). کاربر همون اول با `/start` زبانش رو انتخاب می‌کنه و بعداً با `/lang` عوضش می‌کنه. تا وقتی انتخاب نکرده، زبان پیش‌فرض (`DEFAULT_LANG`، انگلیسی) استفاده می‌شه. خروجی زیرنویس و خلاصه فعلاً فارسیه.
+The bot interface is bilingual (Persian and English). Users pick their language on the first `/start` and can change it any time with `/lang`; until then the bot uses `DEFAULT_LANG` (English). Subtitle and summary output is Persian for now.
 
-با پایتون ۳.۱۱ به بالا و `aiogram 3` نوشته شده.
+Built with Python 3.11+ and `aiogram 3.x`.
 
-## ⚠️ سلب مسئولیت
+## ⚠️ Disclaimer
 
-این کد فقط برای **آموزش و استفادهٔ شخصی** منتشر شده. نویسنده هیچ نسخه‌ای از این ربات رو اجرا نمی‌کنه و مسئول نحوهٔ استفادهٔ دیگران نیست. هر کسی که این ربات رو اجرا می‌کنه، **خودش مسئول** رعایت قوانین یوتیوب، قانون کپی‌رایت و قوانین کشور خودشه.
+This code is published for **educational and personal use only**. The author does not run any instance of this bot and is not responsible for how others use it. Anyone who runs it is **solely responsible** for complying with YouTube's Terms of Service, copyright law and the laws of their own country.
 
-## چطوری کار می‌کنه؟
+## How it works
 
-- **۱.** از کپشن پست، اسم‌ها و عبارت‌های جستجو با Gemini درمیاد.
-- **۲.** با `yt-dlp` توی یوتیوب جستجو می‌شه و نتیجه‌ها امتیاز می‌گیرن.
-- **۳.** صدای اول کلیپ با Whisper (روی Groq) به متن تبدیل می‌شه و با ترنسکریپت کاندیداها مقایسه می‌شه، تا ثانیهٔ دقیق شروع پیدا بشه.
-- **۴.** ترنسکریپت از چند مسیر پشتیبان گرفته می‌شه (پروکسی، مستقیم، Supadata، و در آخر Gemini از روی لینک).
-- **۵.** زیرنویس و خلاصه با مدل‌های Gemini ساخته می‌شن و اگه همه از دسترس خارج بودن، OpenRouter جایگزین می‌شه.
+1. Gemini extracts names and search queries from the post caption.
+2. `yt-dlp` searches YouTube and scores candidates by title, channel and duration.
+3. The first seconds of the clip are transcribed with Whisper (on Groq) and matched against candidate transcripts to find the exact start time.
+4. Transcripts come from a 4-tier fallback chain: proxy, direct, Supadata, then Gemini video-URL transcription.
+5. Subtitles and summaries are generated with Gemini models, falling back to OpenRouter if every Gemini model fails.
 
-توضیح هر فایل توی [FILES.md](FILES.md) هست.
+## Architecture
 
-## چی لازم داری؟
+- **`config.py`**: validated environment configuration via `pydantic-settings`.
+- **`services/llm_router.py`**: tiered LLM failover router (`fast` and `heavy` chains) with per-task timeouts, a circuit breaker, OpenRouter `json_schema` fallback and periodic model catalog validation.
+- **`services/transcript_provider.py`**: 4-tier transcript engine (`youtube-transcript-api` via proxy, direct with a block cooldown, Supadata native captions, Gemini-URL multi-window transcription).
+- **`services/audio_verifier.py`**: FFmpeg audio extraction + Whisper ASR + fuzzy matching to find the start timestamp.
+- **`services/subtitle_service.py`**: translation, SRT, softsub muxing, summaries and the web player.
+- **`services/ytdlp_options.py`**: shared `yt-dlp` options and startup checks for `deno` and `yt-dlp-ejs`.
+- **`services/job_manager.py`**: FIFO concurrency queues, per-user rate limits, temp dir lifecycle, health watchdog and graceful shutdown.
+- **`services/link_server.py`, `services/media_links.py`, `handlers/link_handler.py`**: optional signed, expiring direct-link server with HTTP Range support.
+- **`services/analytics.py`, `middlewares/analytics_middleware.py`**: privacy-preserving SQLite (WAL) analytics with HMAC-SHA256 user hashes.
+- **`services/i18n.py`**: all user-facing text in Persian and English, the `t()` lookup and per-request language via a contextvar.
+- **`handlers/`**: Telegram commands, progress UI and inline buttons.
 
-| چی | از کجا | اجباری؟ |
+A per-file description (in Persian) is in [FILES.md](FILES.md).
+
+## Requirements
+
+| What | Where | Required? |
 |---|---|---|
-| یه سرور لینوکسی (VPS) با پایتون ۳.۱۱+ | هر جا | آره |
-| FFmpeg | `apt install ffmpeg` | آره |
-| Deno نسخهٔ ۲ به بالا | [deno.com](https://deno.com) | برای دانلود از یوتیوب آره |
-| توکن ربات تلگرام | [@BotFather](https://t.me/BotFather) | آره |
-| کلید Gemini | [Google AI Studio](https://aistudio.google.com/apikey) | آره (پلن رایگان کافیه) |
-| کلید Groq | [console.groq.com](https://console.groq.com) | آره (رایگان) |
-| کلید OpenRouter | [openrouter.ai](https://openrouter.ai) | نه، فقط پشتیبان |
-| کلید Supadata | [supadata.ai](https://supadata.ai) | نه، فقط پشتیبان ترنسکریپت |
+| A Linux server (VPS) with Python 3.11+ | anywhere | yes |
+| FFmpeg | `apt install ffmpeg` | yes |
+| Deno 2+ | [deno.com](https://deno.com) | yes, for YouTube downloads |
+| Telegram bot token | [@BotFather](https://t.me/BotFather) | yes |
+| Gemini API key | [Google AI Studio](https://aistudio.google.com/apikey) | yes (free tier is enough) |
+| Groq API key | [console.groq.com](https://console.groq.com) | yes (free) |
+| OpenRouter API key | [openrouter.ai](https://openrouter.ai) | no, fallback only |
+| Supadata API key | [supadata.ai](https://supadata.ai) | no, transcript fallback only |
 
-## نصب سریع (پیشنهادی)
+## Quick install (recommended)
 
-روی یه سرور اوبونتو یا دبیان این رو بزن. اسکریپت همه‌چی رو نصب می‌کنه، کلیدها رو ازت می‌پرسه و ربات رو راه میندازه:
+On an Ubuntu or Debian server, run this. The script installs everything, asks for your keys and starts the bot:
 
 ```bash
 git clone https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot.git && cd AI-Youtube-Video-Finder-telegram-bot && bash setup.sh
 ```
 
-راهنمای کامل نصب: [INSTALL.md](INSTALL.md). اسکریپت هنوز روی سرور واقعی تست نشده؛ اگه خطا دیدی [Issue](https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot/issues) باز کن.
+Full guide: [INSTALL.md](INSTALL.md). The script has not been tested on a real server yet; if it fails, please [open an issue](https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot/issues).
 
-## راه‌اندازی دستی
+## Manual setup
 
-### ۱. پیش‌نیازهای سیستم (اوبونتو یا دبیان)
+### 1. System packages (Ubuntu / Debian)
 
 ```bash
 sudo apt update && sudo apt install -y python3 python3-venv python3-pip ffmpeg git unzip
@@ -69,7 +83,7 @@ curl -fsSL https://deno.land/install.sh | sh
 sudo ln -sf "$HOME/.deno/bin/deno" /usr/local/bin/deno
 ```
 
-### ۲. گرفتن کد
+### 2. Get the code
 
 ```bash
 git clone https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot.git
@@ -79,7 +93,7 @@ git clone https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot.git
 cd AI-Youtube-Video-Finder-telegram-bot
 ```
 
-### ۳. محیط مجازی و نصب کتابخونه‌ها
+### 3. Virtual environment and dependencies
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -89,37 +103,37 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### ۴. تنظیمات
+### 4. Configuration
 
 ```bash
 cp .env.example .env
 ```
 
-بعد `.env` رو باز کن و حداقل این‌ها رو پر کن:
+Open `.env` and fill in at least:
 
-- `TELEGRAM_BOT_TOKEN`: توکن از BotFather
+- `TELEGRAM_BOT_TOKEN`
 - `GEMINI_API_KEY`
 - `GROQ_API_KEY`
-- `ADMIN_ID`: آیدی عددی تلگرام خودت (از [@userinfobot](https://t.me/userinfobot) بگیر)؛ دستور `/stats` فقط برای این آیدی کار می‌کنه
-- `ANALYTICS_SALT`: یه رشتهٔ تصادفی طولانی. با این دستور بساز:
+- `ADMIN_ID`: your numeric Telegram user ID (get it from [@userinfobot](https://t.me/userinfobot)); `/stats` only works for this ID
+- `ANALYTICS_SALT`: a long random string, for example:
 
 ```bash
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-بقیهٔ مقدارها پیش‌فرض معقول دارن و می‌تونی دست نزنی.
+Everything else has sensible defaults.
 
-### ۵. اجرا
+### 5. Run
 
 ```bash
 python main.py
 ```
 
-حالا توی تلگرام به رباتت `/start` بده و یه پست ویدیویی براش فوروارد کن.
+Send `/start` to your bot in Telegram and forward it a video post.
 
-### ۶. اجرای دائمی با systemd (اختیاری)
+### 6. Run as a service with systemd (optional)
 
-یه فایل به اسم `/etc/systemd/system/vsf-bot.service` بساز. مسیرها و اسم کاربر رو با مال خودت عوض کن:
+Create `/etc/systemd/system/vsf-bot.service` (replace the user and paths):
 
 ```ini
 [Unit]
@@ -141,51 +155,45 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload && sudo systemctl enable --now vsf-bot
 ```
 
-لاگ‌ها رو این‌جوری ببین:
-
 ```bash
 journalctl -u vsf-bot -f
 ```
 
-## مشکل بلاک شدن IP سرور توسط یوتیوب
+## YouTube IP blocking
 
-یوتیوب خیلی وقت‌ها IP دیتاسنترها رو می‌بنده (خطای `RequestBlocked` یا bot-check). ربات چند تا راه پشتیبان داره:
+YouTube frequently blocks datacenter IPs (`RequestBlocked` in `youtube-transcript-api`, bot checks in `yt-dlp`). The bot has several fallbacks:
 
-- **۱.** **پروکسی**: `YT_PROXY_HTTP` و `YT_PROXY_HTTPS` رو توی `.env` بذار. یه راه رایگان و غیررسمی اینه که Cloudflare WARP رو با `wireproxy` روی `127.0.0.1:8080` بالا بیاری. ممکنه هر وقت از کار بیفته. برای ترافیک زیاد، پروکسی residential چرخشی بهتره.
-- **۲.** **Supadata**: با `SUPADATA_API_KEY`، تا ۹۰ ترنسکریپت رایگان در ماه.
-- **۳.** **Gemini از روی لینک**: پلن رایگان Gemini روزی حدود ۸ ساعت ویدیوی یوتیوب قبول می‌کنه. سقف پیش‌فرض ربات ۷ ساعته (`GEMINI_URL_DAILY_LIMIT_SEC`). برای استفادهٔ شخصی یا کم‌حجم مناسبه.
+1. **Proxy**: set `YT_PROXY_HTTP` / `YT_PROXY_HTTPS`. A free, unofficial option is Cloudflare WARP through `wireproxy` on `127.0.0.1:8080`; it may stop working at any time. For high volume, use a rotating residential proxy.
+2. **Supadata**: with `SUPADATA_API_KEY`, up to 90 free native transcripts per month.
+3. **Gemini-URL transcription**: the Gemini free tier accepts about 8 hours of YouTube video per day. The bot's default cap is 7 hours (`GEMINI_URL_DAILY_LIMIT_SEC`). Suited to personal or small-scale use.
 
-## لینک مستقیم استریم (اختیاری، پیش‌فرض خاموش)
+## Direct streaming links (optional, off by default)
 
-اگه `LINK_PUBLIC_BASE_URL` رو توی `.env` بذاری (مثلاً `http://IP_SERVER:8081`)، زیر هر نتیجه سه دکمهٔ دیگه هم میاد:
+Set `LINK_PUBLIC_BASE_URL` in `.env` (for example `http://YOUR_SERVER_IP:8081`) to add three buttons under every result:
 
-- **`link_sub`**: فایل MP4 با زیرنویس فارسی و انگلیسی داخلی (حداکثر 720p)
-- **`link_orig`**: ویدیوی اصلی بدون زیرنویس (حداکثر 720p)
-- **`link_audio`**: فقط صدا (M4A)
+- **`link_sub`**: MP4 with embedded Persian + English softsub tracks (max 720p)
+- **`link_orig`**: the original video without subtitles (max 720p)
+- **`link_audio`**: audio only (M4A)
 
-فایل‌ها روی سرور خودت ساخته می‌شن و یه وب‌سرور کوچیک داخلی با پشتیبانی جلو و عقب بردن پخششون می‌کنه. لینک‌ها امضاشده‌ان و بعد از `LINK_TTL_SEC` (پیش‌فرض ۶ ساعت) منقضی می‌شن. هر کی لینک رو داشته باشه تا قبل از انقضا می‌تونه دانلود کنه. پورت `LINK_BIND_PORT` باید توی فایروال باز باشه. یه مقدار تصادفی هم برای `LINK_SIGNING_SECRET` بذار.
+Files are built on your server and served by a small built-in HTTP server with Range support. Links are HMAC-signed and expire after `LINK_TTL_SEC` (default 6 hours); anyone holding a link can download the file until then. Open `LINK_BIND_PORT` in your firewall and set a random `LINK_SIGNING_SECRET`. Leave `LINK_PUBLIC_BASE_URL` empty to keep the feature disabled.
 
-برای خاموش موندنش، `LINK_PUBLIC_BASE_URL` رو خالی بذار.
+## Bot commands
 
-## دستورهای ربات
-
-| دستور | کی می‌تونه | کار |
+| Command | Who | What |
 |---|---|---|
-| `/start`، `/help` | همه | خوش‌آمد و راهنما |
-| `/lang` | همه | تغییر زبان ربات (فارسی / English) |
-| `/version` | همه | نسخهٔ ربات |
-| `/stats`، `/stats_export` | فقط `ADMIN_ID` | آمار استفاده |
+| `/start`, `/help` | everyone | welcome and usage |
+| `/lang` | everyone | switch the bot language (Persian / English) |
+| `/version` | everyone | bot version |
+| `/stats`, `/stats_export` | `ADMIN_ID` only | usage analytics |
 
-## حریم خصوصی
+## Privacy
 
-آمار توی SQLite ذخیره می‌شه و شناسهٔ کاربر فقط به‌صورت هش (HMAC) نگه داشته می‌شه. متن پیام، لینک یا صدا ذخیره نمی‌شه.
+Analytics are stored in SQLite; user IDs are stored only as HMAC hashes. Message text, links and audio are never stored.
 
-## مشارکت
+## Contributing
 
-Issue و Pull Request خوش‌اومدن. هیچ‌وقت کلید یا توکن واقعی رو توی کد یا Issue نذار.
+Issues and pull requests are welcome. Never put real keys or tokens in code or issues.
 
-## لایسنس
+## License
 
-[GNU AGPL v3](LICENSE). خلاصه‌ش: آزادی استفاده و تغییرش بدی، ولی اگه نسخهٔ تغییریافته‌ش رو به‌شکل سرویس (مثلاً یه ربات عمومی) اجرا کنی، باید کدش رو با همین لایسنس منتشر کنی.
-
-</div>
+[GNU AGPL v3](LICENSE). You may use and modify it freely, but if you run a modified version as a network service (for example a public bot), you must publish its source under the same license.

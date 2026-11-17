@@ -1,66 +1,62 @@
-<div dir="rtl">
+# Installation Guide
 
-# راهنمای نصب
+**English** | [فارسی](INSTALL.fa.md)
 
-[English](INSTALL.en.md)
+> ⚠️ **Note:** the installer (`setup.sh`) has not been tested on a real server yet. If anything fails, please [open an issue](https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot/issues) with the full error output and we will fix it.
 
-> ⚠️ **توجه:** اسکریپت نصب (`setup.sh`) هنوز روی یه سرور واقعی تست نشده. اگه جایی خطا داد، لطفاً یه [Issue](https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot/issues) باز کن و متن کامل خطا رو بذار تا درستش کنیم.
+## Have these ready
 
-## قبل از شروع این‌ها رو آماده کن
-
-| چی | از کجا | اجباری؟ |
+| What | Where | Required? |
 |---|---|---|
-| یه سرور اوبونتو ۲۴.۰۴+ یا دبیان ۱۲+ | هر VPS | آره |
-| توکن ربات تلگرام | [@BotFather](https://t.me/BotFather): دستور `/newbot` | آره |
-| کلید Gemini | [Google AI Studio](https://aistudio.google.com/apikey) (رایگان) | آره |
-| کلید Groq | [console.groq.com](https://console.groq.com) (رایگان) | آره |
-| آیدی عددی تلگرام خودت | [@userinfobot](https://t.me/userinfobot) | آره |
-| کلید OpenRouter | [openrouter.ai](https://openrouter.ai) | نه |
-| کلید Supadata | [supadata.ai](https://supadata.ai) | نه |
+| An Ubuntu 24.04+ or Debian 12+ server | any VPS | yes |
+| Telegram bot token | [@BotFather](https://t.me/BotFather), `/newbot` | yes |
+| Gemini API key | [Google AI Studio](https://aistudio.google.com/apikey) (free) | yes |
+| Groq API key | [console.groq.com](https://console.groq.com) (free) | yes |
+| Your numeric Telegram user ID | [@userinfobot](https://t.me/userinfobot) | yes |
+| OpenRouter API key | [openrouter.ai](https://openrouter.ai) | no |
+| Supadata API key | [supadata.ai](https://supadata.ai) | no |
 
-## نصب با یه دستور (پیشنهادی)
+## One-command install (recommended)
 
-روی سرور این رو بزن:
+On your server:
 
 ```bash
 git clone https://github.com/MehrdadNsr/AI-Youtube-Video-Finder-telegram-bot.git && cd AI-Youtube-Video-Finder-telegram-bot && bash setup.sh
 ```
 
-اسکریپت خودش این کارها رو می‌کنه:
+The script:
 
-- **۱.** پیش‌نیازها رو نصب می‌کنه: پایتون، FFmpeg، Deno و کتابخونه‌های پایتون.
-- **۲.** کلیدها رو یکی‌یکی ازت می‌پرسه. موقع تایپ کلیدها چیزی روی صفحه نشون داده نمی‌شه، این طبیعیه. توکن ربات رو هم با خود تلگرام چک می‌کنه.
-- **۳.** کلیدهای امنیتی داخلی (`ANALYTICS_SALT` و `LINK_SIGNING_SECRET`) رو خودش تصادفی می‌سازه.
-- **۴.** می‌پرسه لینک مستقیم می‌خوای یا نه. اگه آره، IP سرور رو خودش پیدا می‌کنه و اگه فایروال `ufw` فعال باشه، پورت رو باز می‌کنه.
-- **۵.** فایل `.env` رو می‌سازه، به‌طوری که فقط کاربر خودت بتونه بخونتش.
-- **۶.** ربات رو به‌عنوان سرویس سیستم راه میندازه، که با ری‌استارت سرور خودش بالا بیاد و اگه کرش کرد دوباره روشن بشه.
+1. Installs the requirements: Python, FFmpeg, Deno and the Python packages.
+2. Asks for your keys one by one (typing is hidden, that is normal) and checks the bot token with Telegram.
+3. Generates the internal secrets (`ANALYTICS_SALT`, `LINK_SIGNING_SECRET`) for you.
+4. Asks whether you want direct streaming links; if yes, it detects your server IP and opens the port if `ufw` is active.
+5. Writes `.env`, readable only by your user.
+6. Installs the bot as a system service that starts on boot and restarts on crash.
 
-آخرش برو توی تلگرام و به رباتت `/start` بده.
+When it finishes, open your bot in Telegram and send `/start`.
 
-## بعد از نصب
+## After installing
 
-| کار | دستور |
+| Task | Command |
 |---|---|
-| دیدن لاگ‌ها | `journalctl -u vsf-bot -f` |
-| ری‌استارت | `sudo systemctl restart vsf-bot` |
-| خاموش کردن | `sudo systemctl stop vsf-bot` |
-| عوض کردن کلیدها یا تنظیمات | `bash setup.sh --config-only` |
-| آپدیت به آخرین نسخه | `git pull && .venv/bin/pip install -r requirements.txt && sudo systemctl restart vsf-bot` |
+| Follow the logs | `journalctl -u vsf-bot -f` |
+| Restart | `sudo systemctl restart vsf-bot` |
+| Stop | `sudo systemctl stop vsf-bot` |
+| Change keys or settings | `bash setup.sh --config-only` |
+| Update to the latest version | `git pull && .venv/bin/pip install -r requirements.txt && sudo systemctl restart vsf-bot` |
 
-بقیهٔ تنظیمات (مدل‌ها، سقف‌ها، timeoutها) توی فایل `.env` هستن و توضیح هر کدوم توی `.env.example` نوشته شده. بعد از هر تغییر، ربات رو ری‌استارت کن.
+Every other setting (models, limits, timeouts) lives in `.env` and is described in `.env.example`. Restart the bot after editing it.
 
-## لینک مستقیم چیه؟
+## What are direct streaming links?
 
-اگه روشنش کنی، زیر هر نتیجه سه دکمهٔ دیگه هم میاد: ویدیو با زیرنویس، ویدیوی اصلی، و فقط صدا. فایل‌ها روی **سرور خودت** ساخته می‌شن و از همون‌جا پخش می‌شن، پس از فضا و پهنای باند سرور خودت استفاده می‌کنه. لینک‌ها امضاشده‌ان و بعد از ۶ ساعت منقضی می‌شن. پیش‌فرضش خاموشه.
+When enabled, each result gets three extra buttons: video with subtitles, original video, and audio only. Files are built and served from **your own server**, so they use your server's disk and bandwidth. Links are signed and expire after 6 hours. Off by default.
 
-## نصب دستی
+## Manual install
 
-اگه اسکریپت روی سیستمت کار نکرد، مرحله‌های دستی توی [README](README.md)، بخش «راه‌اندازی دستی»، هست.
+If the script does not work on your system, the manual steps are in the [README](README.md#manual-setup).
 
-## مشکلات رایج
+## Common problems
 
-- **`Python ... is too old`**: ربات پایتون ۳.۱۱ به بالا لازم داره. اوبونتو ۲۴.۰۴ یا دبیان ۱۲ به بعد رو استفاده کن.
-- **یوتیوب سرور رو بلاک کرده** (`RequestBlocked` یا خطای bot-check): بخش «مشکل بلاک شدن IP» توی [README](README.md) رو ببین. با یه پروکسی درست می‌شه.
-- **ربات جواب نمی‌ده**: اول لاگ‌ها رو ببین (`journalctl -u vsf-bot -n 50`). اگه چیزی ازش سر درنیاوردی، Issue باز کن و لاگ رو بذار. کلیدها و توکنت رو هیچ‌وقت توی Issue نذار.
-
-</div>
+- **`Python ... is too old`**: the bot needs Python 3.11+. Use Ubuntu 24.04 / Debian 12 or newer.
+- **YouTube blocks the server** (`RequestBlocked` or bot-check errors): see "YouTube IP blocking" in the [README](README.md). A proxy fixes it.
+- **The bot does not answer**: check the logs first (`journalctl -u vsf-bot -n 50`). If they don't make sense, open an issue with the log. Never post your keys or token in an issue.
